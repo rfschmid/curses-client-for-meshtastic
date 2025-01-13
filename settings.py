@@ -5,6 +5,8 @@ import meshtastic.serial_interface, meshtastic.tcp_interface
 from meshtastic.protobuf import config_pb2, module_config_pb2, mesh_pb2, channel_pb2
 import globals
 
+static_menu_items = ["Reboot", "Reset NodeDB", "Shutdown", "Factory Reset", "Show Hops"]
+
 def display_enum_menu(stdscr, enum_values, menu_item):
     menu_height = len(enum_values) + 2
     menu_width = max(len(option) for option in enum_values) + 4
@@ -554,13 +556,16 @@ def nested_menu(stdscr, menu):
 
             # Display current menu
             for i, key in enumerate(current_menu.keys(), start=0):
+                line_text = key
+                if(key == "Show Hops"):
+                    line_text = f"[{"x" if globals.show_hops else " "}] {key}"
                 if i == menu_item:
-                    if key in ["Reboot", "Reset NodeDB", "Shutdown", "Factory Reset"]:
-                        stdscr.addstr(i+3, 1, key, curses.color_pair(5))
+                    if key in static_menu_items:
+                        stdscr.addstr(i+3, 1, line_text, curses.color_pair(5))
                     else:
-                        stdscr.addstr(i+3, 1, key, curses.A_REVERSE)
+                        stdscr.addstr(i+3, 1, line_text, curses.A_REVERSE)
                 else:
-                    stdscr.addstr(i+3, 1, key)
+                    stdscr.addstr(i+3, 1, line_text)
 
             # Display current values
             display_values(stdscr, key_list, menu_path)
@@ -586,7 +591,7 @@ def nested_menu(stdscr, menu):
                 #     break
                 if selected_key == "Channels":
                     channels_editor(stdscr)
-                elif selected_key not in ["Reboot", "Reset NodeDB", "Shutdown", "Factory Reset"]:
+                elif selected_key not in static_menu_items:
                     menu_path.append(selected_key)
 
                     if isinstance(selected_value, dict):
@@ -621,6 +626,8 @@ def nested_menu(stdscr, menu):
                     settings_shutdown()
                 elif selected_key == "Factory Reset":
                     settings_factory_reset()
+                elif selected_key == "Show Hops":
+                    settings_toggle_show_hops()
 
                 elif selected_value is not None:
                     stdscr.refresh()
@@ -688,7 +695,8 @@ def settings(stdscr):
         "Reboot": None,
         "Reset NodeDB": None,
         "Shutdown": None,
-        "Factory Reset": None
+        "Factory Reset": None,
+        "Show Hops": None
     }
 
     # Call nested_menu function to display and handle the nested menu
@@ -716,6 +724,9 @@ def settings_shutdown():
 
 def settings_factory_reset():
     globals.interface.localNode.factoryReset()
+
+def settings_toggle_show_hops():
+    globals.show_hops = not globals.show_hops
 
 def settings_set_owner(long_name=None, short_name=None, is_licensed=False):
     if is_licensed == 'True':
