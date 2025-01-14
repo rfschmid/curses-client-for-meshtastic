@@ -558,7 +558,7 @@ def nested_menu(stdscr, menu):
             for i, key in enumerate(current_menu.keys(), start=0):
                 line_text = key
                 if(key == "Show Hops"):
-                    line_text = f"[{"x" if globals.show_hops else " "}] {key}"
+                    line_text = f"[{'x' if globals.show_hops else ' '}] {key}"
                 if i == menu_item:
                     if key in static_menu_items:
                         stdscr.addstr(i+3, 1, line_text, curses.color_pair(5))
