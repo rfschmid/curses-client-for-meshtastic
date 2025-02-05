@@ -5,52 +5,76 @@ import default_config as config
 
 def get_channels():
     """Retrieve channels from the node and update globals.channel_list and globals.all_messages."""
-    node = globals.interface.getNode('^local')
-    device_channels = node.channels
-
-    # Clear and rebuild channel list
-    # globals.channel_list = []
-
-    for device_channel in device_channels:
-        if device_channel.role:
-            # Use the channel name if available, otherwise use the modem preset
-            if device_channel.settings.name:
-                channel_name = device_channel.settings.name
-            else:
-                # If channel name is blank, use the modem preset
-                lora_config = node.localConfig.lora
-                modem_preset_enum = lora_config.modem_preset
-                modem_preset_string = config_pb2._CONFIG_LORACONFIG_MODEMPRESET.values_by_number[modem_preset_enum].name
-                channel_name = convert_to_camel_case(modem_preset_string)
-
-            # Add channel to globals.channel_list if not already present
-            if channel_name not in globals.channel_list:
-                globals.channel_list.append(channel_name)
-
-            # Initialize globals.all_messages[channel_name] if it doesn't exist
-            if channel_name not in globals.all_messages:
-                globals.all_messages[channel_name] = []
+    # node = globals.interface.getNode('^local')
+    # device_channels = node.channels
+    #
+    # # Clear and rebuild channel list
+    # # globals.channel_list = []
+    #
+    # for device_channel in device_channels:
+    #     if device_channel.role:
+    #         # Use the channel name if available, otherwise use the modem preset
+    #         if device_channel.settings.name:
+    #             channel_name = device_channel.settings.name
+    #         else:
+    #             # If channel name is blank, use the modem preset
+    #             lora_config = node.localConfig.lora
+    #             modem_preset_enum = lora_config.modem_preset
+    #             modem_preset_string = config_pb2._CONFIG_LORACONFIG_MODEMPRESET.values_by_number[modem_preset_enum].name
+    #             channel_name = convert_to_camel_case(modem_preset_string)
+    #
+    #         # Add channel to globals.channel_list if not already present
+    #         if channel_name not in globals.channel_list:
+    #             globals.channel_list.append(channel_name)
+    #
+    #         # Initialize globals.all_messages[channel_name] if it doesn't exist
+    #         if channel_name not in globals.all_messages:
+    #             globals.all_messages[channel_name] = []
+    globals.channel_list = ['MediumFast', 'Another Channel']
 
 
     return globals.channel_list
 
 def get_node_list():
-    if globals.interface.nodes:
-        my_node_num = globals.myNodeNum
-
-        def node_sort(node):
-            if(config.node_sort == 'lastHeard'):
-                return -node['lastHeard'] if ('lastHeard' in node and isinstance(node['lastHeard'], int)) else 0
-            elif(config.node_sort == "name"):
-                return node['user']['longName']
-            elif(config.node_sort == "hops"):
-                return node['hopsAway'] if 'hopsAway' in node else 100
-            else:
-                return node
-        sorted_nodes = sorted(globals.interface.nodes.values(), key = node_sort)
-        node_list = [node['num'] for node in sorted_nodes if node['num'] != my_node_num]
-        return [my_node_num] + node_list  # Ensuring your node is always first
-    return []
+    # if globals.interface.nodes:
+    #     my_node_num = globals.myNodeNum
+    #
+    #     def node_sort(node):
+    #         if(config.node_sort == 'lastHeard'):
+    #             return -node['lastHeard'] if ('lastHeard' in node and isinstance(node['lastHeard'], int)) else 0
+    #         elif(config.node_sort == "name"):
+    #             return node['user']['longName']
+    #         elif(config.node_sort == "hops"):
+    #             return node['hopsAway'] if 'hopsAway' in node else 100
+    #         else:
+    #             return node
+    #     sorted_nodes = sorted(globals.interface.nodes.values(), key = node_sort)
+    #     node_list = [node['num'] for node in sorted_nodes if node['num'] != my_node_num]
+    #     return [my_node_num] + node_list  # Ensuring your node is always first
+    # return []
+    return ["Meshtastic fb3c",
+"KG7NDX-N2",
+"Satellite II Repeater",
+"Search for Discord/Meshtashtic/Oregon",
+"K7EOK Mobile",
+"Turtle",
+"CARS Terwilliger Plaza",
+"No Hands!",
+"McCutie",
+"K1PDX",
+"Arnold Creek",
+"Nansen",
+"🚗 Kodin 1",
+"PH1","luna",
+"sputnik1",
+"K7EOK Maplewood West",
+"🚙 KE7YVU 2",
+"DNET",
+"Green Bluff",
+"Council Crest Solar",
+"Meshtastic 61c7",
+"Bella",
+"👑Mojo Solar Base 4f12"]
 
 def refresh_node_list():
     new_node_list = get_node_list()

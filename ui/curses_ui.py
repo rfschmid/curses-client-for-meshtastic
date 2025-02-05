@@ -1,4 +1,5 @@
 import curses
+import random
 import textwrap
 from utilities.utils import get_channels, get_readable_duration, get_time_ago, refresh_node_list
 from settings import settings_menu
@@ -210,10 +211,11 @@ def draw_messages_window(scroll_to_bottom = False):
     """Update the messages window based on the selected channel and scroll position."""
     messages_pad.erase()
 
-    channel = globals.channel_list[globals.selected_channel]
+    # channel = globals.channel_list[globals.selected_channel]
 
-    if channel in globals.all_messages:
-        messages = globals.all_messages[channel]
+    if True: #channel in globals.all_messages:
+        messages = [("-- 2025-02-04 17:00 --", ""), (">> Sent: ", "Help, I'm stuck in a ditch!"), (">> 1adc: ", "Do you require an alpinist?"), (">> Sent: ", "I don't know what that is.")]
+        #globals.all_messages[channel]
 
         msg_line_count = 0
 
@@ -255,9 +257,9 @@ def draw_node_list():
     nodes_pad.resize(len(globals.node_list) + 1, box_width)
 
     for i, node_num in enumerate(globals.node_list):
-        node = globals.interface.nodesByNum[node_num]
-        secure = 'user' in node and 'publicKey' in node['user'] and node['user']['publicKey']
-        node_str = f"{'🔒' if secure else '🔓'} {get_name_from_database(node_num, 'long')}".ljust(box_width - 2)[:box_width - 2]
+        # node = globals.interface.nodesByNum[node_num]
+        secure = random.randint(0,1) #'user' in node and 'publicKey' in node['user'] and node['user']['publicKey']
+        node_str = f"{'🔒' if secure else '🔓'} {node_num}".ljust(box_width - 2)[:box_width - 2]
         nodes_pad.addstr(i, 1, node_str, get_color("node_list", reverse=globals.selected_node == i and globals.current_window == 2))
 
     nodes_box.attrset(get_color("window_frame_selected") if globals.current_window == 2 else get_color("window_frame"))
@@ -485,10 +487,10 @@ def handle_resize(stdscr, firstrun):
     curses.curs_set(1)
 
     try:
+        draw_node_list()
         draw_function_win()
         draw_channel_list()
         draw_messages_window(True)
-        draw_node_list()
     except:
         # Resize events can come faster than we can re-draw, which can cause a curses error.
         # In this case we'll see another curses.KEY_RESIZE in our key handler and draw again later.
