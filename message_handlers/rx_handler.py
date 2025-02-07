@@ -8,8 +8,6 @@ import default_config as config
 import globals
 
 
-from datetime import datetime
-
 def on_receive(packet, interface):
 
     # Update packet log
@@ -28,6 +26,14 @@ def on_receive(packet, interface):
         changed = refresh_node_list()
         if(changed):
             draw_node_list()
+
+        if 'hopLimit' in packet and 'hopStart' in packet and packet['hopLimit'] == packet['hopStart']:
+            f=open("SignalMetrics.log","a")
+            f.write(f"{datetime.now()}" + "\n")
+            f.write(f"Direct message from: {get_name_from_database(packet['from'])}" + "\n")
+            f.write(f"SNR: {packet['rxSnr'] if 'rxSnr' in packet else 'unknown'}" + "\n")
+            f.write(f"RSSI: {packet['rxRssi'] if 'rxRssi' in packet else 'unknown'}" + "\n")
+            f.close()
 
         if packet['decoded']['portnum'] == 'NODEINFO_APP':
             if "user" in packet['decoded'] and "longName" in packet['decoded']["user"]: 
