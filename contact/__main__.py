@@ -103,6 +103,9 @@ def main(stdscr: curses.window) -> None:
             initialize_globals()
             logging.info("Starting main UI")
 
+            stdscr.clear()
+            stdscr.refresh()
+
         try:
             with contextlib.redirect_stdout(output_capture), contextlib.redirect_stderr(output_capture):
                 main_ui(stdscr)
