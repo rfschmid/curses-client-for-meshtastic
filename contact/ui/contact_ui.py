@@ -404,11 +404,25 @@ def handle_enter(input_text: str) -> str:
 
 def handle_ctrl_t(stdscr: curses.window) -> None:
     """Handle Ctrl + T key events to send a traceroute."""
+    now = time.monotonic()
+    cooldown = 30.0
+    remaining = cooldown - (now - ui_state.last_traceroute_time)
+
+    if remaining > 0:
+        curses.curs_set(0)  # Hide cursor
+        contact.ui.dialog.dialog(
+            "Traceroute Not Sent", f"Please wait {int(remaining)} seconds before sending another traceroute."
+        )
+        curses.curs_set(1)  # Show cursor again
+        handle_resize(stdscr, False)
+        return
+
     send_traceroute()
+    ui_state.last_traceroute_time = now
     curses.curs_set(0)  # Hide cursor
     contact.ui.dialog.dialog(
         f"Traceroute Sent To: {get_name_from_database(ui_state.node_list[ui_state.selected_node])}",
-        "Results will appear in messages window.\nNote: Traceroute is limited to once every 30 seconds.",
+        "Results will appear in messages window.",
     )
     curses.curs_set(1)  # Show cursor again
     handle_resize(stdscr, False)
