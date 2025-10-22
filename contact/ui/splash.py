@@ -22,7 +22,7 @@ def draw_splash(stdscr: object) -> None:
     stdscr.addstr(start_y + 1, start_x - 1, message_2, get_color("splash_logo", bold=True))
     stdscr.addstr(start_y + 2, start_x - 2, message_3, get_color("splash_logo", bold=True))
     stdscr.addstr(start_y + 4, start_x2, message_4, get_color("splash_text"))
-    stdscr.move(start_y + 6, 0)
+    stdscr.move(start_y + 5, start_x2)
 
     stdscr.attrset(get_color("window_frame"))
     stdscr.box()
