@@ -42,7 +42,9 @@ For smaller displays you may wish to enable `single_pane_mode`:
 - `ENTER` = Send a message typed in the Input Window, or with the Node List highlighted, select a node to DM
 -  `` ` `` = Open the Settings dialogue
 - `CTRL` + `p` = Hide/show a log of raw received packets.
-- `CTRL` + `t` = With the Node List highlighted, send a traceroute to the selected node 
+- `CTRL` + `t` = With the Node List highlighted, send a traceroute to the selected node
+- `CTRL` + `f` = With the Node List highlighted, favorite the selected node
+- `CTRL` + `g` = With the Node List highlighted, ignore the selected node 
 - `CTRL` + `d` = With the Channel List hightlighted, archive a chat to reduce UI clutter. Messages will be saved in the db and repopulate if you send or receive a DM from this user.
 - `CTRL` + `d` = With the Note List highlghted, remove a node from your nodedb.
 - `ESC` = Exit out of the Settings Dialogue, or Quit the application if settings are not displayed.
