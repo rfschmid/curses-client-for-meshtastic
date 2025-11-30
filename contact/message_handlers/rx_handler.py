@@ -101,6 +101,11 @@ def on_receive(packet: Dict[str, Any], interface: Any) -> None:
                     maybe_store_nodeinfo_in_db(packet)
 
             elif packet["decoded"]["portnum"] == "TEXT_MESSAGE_APP":
+                hop_start = packet.get('hopStart', 0)
+                hop_limit = packet.get('hopLimit', 0)
+
+                hops = hop_start - hop_limit
+
 
                 if config.notification_sound == "True":
                     play_sound()
@@ -140,7 +145,7 @@ def on_receive(packet: Dict[str, Any], interface: Any) -> None:
                 message_from_id = packet["from"]
                 message_from_string = get_name_from_database(message_from_id, type="short") + ":"
 
-                add_new_message(channel_id, f"{config.message_prefix} {message_from_string} ", message_string)
+                add_new_message(channel_id, f"{config.message_prefix} [{hops}] {message_from_string} ", message_string)
 
                 if refresh_channels:
                     draw_channel_list()
