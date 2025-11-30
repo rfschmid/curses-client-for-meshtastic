@@ -136,7 +136,7 @@ def load_messages_from_db() -> None:
                         elif ack_type == "Nak":
                             ack_str = config.nak_str
 
-                        ts_str = time.strftime("%H:%M:%S")
+                        ts_str = datetime.fromtimestamp(timestamp).strftime("[%H:%M:%S] ")
 
                         if user_id == str(interface_state.myNodeNum):
                             sanitized_message = message.replace("\x00", "")
@@ -144,7 +144,7 @@ def load_messages_from_db() -> None:
                         else:
                             sanitized_message = message.replace("\x00", "")
                             formatted_message = (
-                                f"[{ts_str}] {config.message_prefix} {get_name_from_database(int(user_id), 'short')}: ",
+                                f"{ts_str}{config.message_prefix} {get_name_from_database(int(user_id), 'short')}: ",
                                 sanitized_message,
                             )
 
