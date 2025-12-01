@@ -97,14 +97,14 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     pkt_h = max(1, int(height / 3))
 
     if firstrun:
-        entry_win = curses.newwin(entry_height, width, 0, 0)
+        entry_win = curses.newwin(entry_height, width, height - entry_height, 0)
 
-        channel_win = curses.newwin(content_h, channel_width, entry_height, 0)
-        messages_win = curses.newwin(content_h, messages_width, entry_height, channel_width)
-        nodes_win = curses.newwin(content_h, nodes_width, entry_height, channel_width + messages_width)
+        channel_win = curses.newwin(content_h, channel_width, 0, 0)
+        messages_win = curses.newwin(content_h, messages_width, 0, channel_width)
+        nodes_win = curses.newwin(content_h, nodes_width, 0, channel_width + messages_width)
 
-        function_win = curses.newwin(function_height, width, height - function_height, 0)
-        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - function_height, channel_width)
+        function_win = curses.newwin(function_height, width, height - entry_height - function_height, 0)
+        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - entry_height - function_height, channel_width)
 
         # Will be resized to what we need when drawn
         messages_pad = curses.newpad(1, 1)
@@ -127,21 +127,23 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         for win in [entry_win, channel_win, messages_win, nodes_win, function_win, packetlog_win]:
             win.erase()
 
-        entry_win.resize(3, width)
+        entry_win.resize(entry_height, width)
+        entry_win.mvwin(height - entry_height, 0)
 
         channel_win.resize(content_h, channel_width)
+        channel_win.mvwin(0, 0)
 
         messages_win.resize(content_h, messages_width)
-        messages_win.mvwin(3, channel_width)
+        messages_win.mvwin(0, channel_width)
 
         nodes_win.resize(content_h, nodes_width)
-        nodes_win.mvwin(entry_height, channel_width + messages_width)
+        nodes_win.mvwin(0, channel_width + messages_width)
 
-        function_win.resize(3, width)
-        function_win.mvwin(height - function_height, 0)
+        function_win.resize(function_height, width)
+        function_win.mvwin(height - entry_height - function_height, 0)
 
         packetlog_win.resize(pkt_h, messages_width)
-        packetlog_win.mvwin(height - pkt_h - function_height, channel_width)
+        packetlog_win.mvwin(height - pkt_h - entry_height - function_height, channel_width)
 
     # Draw window borders
     for win in [channel_win, entry_win, nodes_win, messages_win, function_win]:
@@ -176,7 +178,7 @@ def main_ui(stdscr: curses.window) -> None:
     handle_resize(stdscr, True)
 
     while True:
-        draw_text_field(entry_win, f"Input: {(input_text or '')[-(stdscr.getmaxyx()[1] - 10):]}", get_color("input"))
+        draw_text_field(entry_win, f"Message: {(input_text or '')[-(stdscr.getmaxyx()[1] - 10):]}", get_color("input"))
 
         # Get user input from entry window
         char = entry_win.get_wch()
@@ -204,16 +206,22 @@ def main_ui(stdscr: curses.window) -> None:
         elif char == curses.KEY_LEFT or char == curses.KEY_RIGHT:
             handle_leftright(char)
 
+        elif char in (curses.KEY_F1, curses.KEY_F2, curses.KEY_F3):
+            handle_function_keys(char)
+
         elif char in (chr(curses.KEY_ENTER), chr(10), chr(13)):
             input_text = handle_enter(input_text)
 
-        elif char == chr(20):  # Ctrl + t for Traceroute
+        elif char in (curses.KEY_F4, chr(20)):  # Ctrl + t and F4 for Traceroute
             handle_ctrl_t(stdscr)
+
+        elif char == curses.KEY_F5:
+            handle_f5_key(stdscr)
 
         elif char in (curses.KEY_BACKSPACE, chr(127)):
             input_text = handle_backspace(entry_win, input_text)
 
-        elif char == "`":  # ` Launch the settings interface
+        elif char in (curses.KEY_F12, "`"):  # ` Launch the settings interface
             handle_backtick(stdscr)
 
         elif char == chr(16):  # Ctrl + P for Packet Log
@@ -357,6 +365,51 @@ def handle_leftright(char: int) -> None:
     # Draw arrows last; force even in multi-pane to avoid flicker
     draw_window_arrows(ui_state.current_window)
 
+def handle_function_keys(char: int) -> None:
+    """Switch windows using F1/F2/F3."""
+    if char == curses.KEY_F1:
+        target = 0
+    elif char == curses.KEY_F2:
+        target = 1
+    elif char == curses.KEY_F3:
+        target = 2
+    else:
+        return
+
+    old_window = ui_state.current_window
+
+    if target == old_window:
+        return
+
+    ui_state.current_window = target
+    handle_resize(root_win, False)
+
+    if old_window == 0:
+        paint_frame(channel_win, selected=False)
+        refresh_pad(0)
+    elif old_window == 1:
+        paint_frame(messages_win, selected=False)
+        refresh_pad(1)
+    elif old_window == 2:
+        draw_function_win()
+        paint_frame(nodes_win, selected=False)
+        refresh_pad(2)
+
+    if not ui_state.single_pane_mode:
+        draw_window_arrows(old_window)
+
+    if ui_state.current_window == 0:
+        paint_frame(channel_win, selected=True)
+        refresh_pad(0)
+    elif ui_state.current_window == 1:
+        paint_frame(messages_win, selected=True)
+        refresh_pad(1)
+    elif ui_state.current_window == 2:
+        draw_function_win()
+        paint_frame(nodes_win, selected=True)
+        refresh_pad(2)
+
+    draw_window_arrows(ui_state.current_window)
 
 def handle_enter(input_text: str) -> str:
     """Handle Enter key events to send messages or select channels."""
@@ -401,6 +454,82 @@ def handle_enter(input_text: str) -> str:
         return ""
     return input_text
 
+def handle_f5_key(stdscr: curses.window) -> None:
+    node = None
+    try:
+        node = interface_state.interface.nodesByNum[ui_state.node_list[ui_state.selected_node]]
+    except KeyError:
+        return
+
+    message_parts = []
+    
+    message_parts.append("**📋 Basic Information:**")
+    message_parts.append(f"• Device: {node.get('user', {}).get('longName', 'Unknown')}")
+    message_parts.append(f"• Short name: {node.get('user', {}).get('shortName', 'Unknown')}")
+    message_parts.append(f"• Hardware: {node.get('user', {}).get('hwModel', 'Unknown')}")
+    
+    role = f"{node.get('user', {}).get('role', 'Unknown')}"
+    message_parts.append(f"• Role: {role}")
+    
+    pk = f"{node.get('user', {}).get('publicKey')}"
+    message_parts.append(f"Public key: {pk}")
+    
+    message_parts.append(f"• Node ID: {node.get('num', 'Unknown')}")
+    if 'position' in node:
+        pos = node['position']
+        if pos.get('latitude') and pos.get('longitude'):
+            message_parts.append(f"• Position: {pos['latitude']:.4f}, {pos['longitude']:.4f}")
+        if pos.get('altitude'):
+            message_parts.append(f"• Altitude: {pos['altitude']}m")
+        message_parts.append(f"https://maps.google.com/?q={pos['latitude']:.4f},{pos['longitude']:.4f}")
+
+    if any(key in node for key in ['snr', 'hopsAway', 'lastHeard']):
+        message_parts.append("\n**🌐 Network Metrics:**")
+    
+        if 'snr' in node:
+            snr = node['snr']
+            snr_status = "🟢 Excellent" if snr > 10 else "🟡 Good" if snr > 3 else "🟠 Fair" if snr > -10 else "🔴 Poor" if snr > -20 else "💀 Very Poor"
+            message_parts.append(f"• SNR: {snr}dB {snr_status}")
+    
+        if 'hopsAway' in node:
+            hops = node['hopsAway']
+            hop_emoji = '📡' if hops == 0 else '🔄' if hops == 1 else '⏩'
+            message_parts.append(f"• Hops away: {hop_emoji} {hops}")
+    
+        if 'lastHeard' in node and node['lastHeard']:
+            message_parts.append(f"• Last heard: 🕐 {get_time_ago(node['lastHeard'])}")
+    
+    if node.get('deviceMetrics'):
+        metrics = node['deviceMetrics']
+        message_parts.append("\n**📊 Device Metrics:**")
+    
+        if 'batteryLevel' in metrics:
+            battery = metrics['batteryLevel']
+            battery_emoji = '🟢' if battery > 50 else '🟡' if battery > 20 else '🔴'
+            voltage_info = f" ({metrics['voltage']}v)" if 'voltage' in metrics else ""
+            message_parts.append(f"• Battery: {battery_emoji} {battery}%{voltage_info}")
+    
+        if 'uptimeSeconds' in metrics:
+            message_parts.append(f"• Uptime: ⏱️ {get_readable_duration(metrics['uptimeSeconds'])}")
+    
+        if 'channelUtilization' in metrics:
+            util = metrics['channelUtilization']
+            util_emoji = '🔴' if util > 80 else '🟡' if util > 50 else '🟢'
+            message_parts.append(f"• Channel utilization: {util_emoji} {util:.2f}%")
+    
+        if 'airUtilTx' in metrics:
+            air_util = metrics['airUtilTx']
+            air_emoji = '🔴' if air_util > 80 else '🟡' if air_util > 50 else '🟢'
+            message_parts.append(f"• Air utilization TX: {air_emoji} {air_util:.2f}%")
+    
+    message = "\n".join(message_parts)
+    
+    contact.ui.dialog.dialog(
+        f"📡 Node Details: {node.get('user', {}).get('shortName', 'Unknown')}",
+        message
+    )
+    curses.curs_set(1)  # Show cursor again
+    handle_resize(stdscr, False)
 
 def handle_ctrl_t(stdscr: curses.window) -> None:
     """Handle Ctrl + T key events to send a traceroute."""
@@ -648,7 +777,7 @@ def draw_messages_window(scroll_to_bottom: bool = False) -> None:
             for line in wrapped_lines:
                 if prefix.startswith("--"):
                     color = get_color("timestamps")
-                elif prefix.startswith(config.sent_message_prefix):
+                elif prefix.find(config.sent_message_prefix) != -1:
                     color = get_color("tx_messages")
                 else:
                     color = get_color("rx_messages")
@@ -698,9 +827,21 @@ def draw_node_list() -> None:
     for i, node_num in enumerate(ui_state.node_list):
         node = interface_state.interface.nodesByNum[node_num]
         secure = "user" in node and "publicKey" in node["user"] and node["user"]["publicKey"]
-        node_str = f"{'🔐' if secure else '🔓'} {get_name_from_database(node_num, 'long')}".ljust(box_width - 2)[
-            : box_width - 2
-        ]
+        status_icon = '🔐' if secure else '🔓'
+        node_name = get_name_from_database(node_num, 'long')
+        user_name = node['user']['shortName']
+        
+        uptime_str = ""
+        if "deviceMetrics" in node and "uptimeSeconds" in node["deviceMetrics"]:
+            uptime_str = f" / Up: {get_readable_duration(node['deviceMetrics']['uptimeSeconds'])}"
+
+        last_heard_str = f"  ■  {get_time_ago(node['lastHeard'])}" if node.get("lastHeard") else ""
+        hops_str = f"  ■  Hops: {node['hopsAway']}" if "hopsAway" in node else ""
+        snr_str = f"  ■  SNR: {node['snr']}dB" if node.get("hopsAway") == 0 and "snr" in node else ""
+        
+        # Future node name custom formatting possible
+        node_str = f"{status_icon} {node_name}"
+        node_str = node_str.ljust(box_width - 4)[:box_width - 2]
         color = "node_list"
         if "isFavorite" in node and node["isFavorite"]:
             color = "node_favorite"
@@ -986,11 +1127,13 @@ def draw_help() -> None:
     """Draw the help text in the function window."""
     cmds = [
         "↑→↓← = Select",
+        "   F1/F2/F3 - Select windows",
         "   ENTER = Send",
-        "   ` = Settings",
+        "   \"`\"/F12 = Settings",
         "   ESC = Quit",
         "   ^P = Packet Log",
-        "   ^t = Traceroute",
+        "   ^t/F4 = Traceroute",
+        "   F5 = Full node info",
         "   ^d = Archive Chat",
         "   ^f = Favorite",
         "   ^g = Ignore",
@@ -1030,6 +1173,7 @@ def refresh_pad(window: int) -> None:
         pad = nodes_pad
         box = nodes_win
         lines = box.getmaxyx()[0] - 2
+        box.addstr(0, 2, (f"Nodes: {len(ui_state.node_list)}"), curses.A_BOLD)
         selected_item = ui_state.selected_node
         start_index = max(0, selected_item - (win_height - 3))  # Leave room for borders
 

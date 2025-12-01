@@ -1,3 +1,5 @@
+import time
+
 from typing import Any, Dict
 
 import google.protobuf.json_format
@@ -49,7 +51,7 @@ def onAckNak(packet: Dict[str, Any]) -> None:
         ack_type = "Nak"
 
     ui_state.all_messages[acknak["channel"]][acknak["messageIndex"]] = (
-        config.sent_message_prefix + confirm_string + ": ",
+        time.strftime("[%H:%M:%S] ") + config.sent_message_prefix + confirm_string + ": ",
         message,
     )
 

@@ -167,7 +167,8 @@ def add_new_message(channel_id, prefix, message):
         ui_state.all_messages[channel_id].append((f"-- {current_hour} --", ""))
 
     # Add the message
-    ui_state.all_messages[channel_id].append((prefix, message))
+    ts_str = time.strftime("[%H:%M:%S] ")
+    ui_state.all_messages[channel_id].append((f"{ts_str}{prefix}", message))
 
 
 def parse_protobuf(packet: dict) -> Union[str, dict]:
