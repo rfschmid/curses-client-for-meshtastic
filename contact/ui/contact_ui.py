@@ -63,7 +63,7 @@ def paint_frame(win, selected: bool) -> None:
 
 def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     """Handle terminal resize events and redraw the UI accordingly."""
-    global messages_pad, messages_win, nodes_pad, nodes_win, channel_pad, channel_win, function_win, packetlog_win, entry_win
+    global messages_pad, messages_win, nodes_pad, nodes_win, channel_pad, channel_win, packetlog_win, entry_win
 
     # Calculate window max dimensions
     height, width = stdscr.getmaxyx()
@@ -91,8 +91,7 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
             nodes_width = max(MIN_COL, nodes_width - delta)
 
     entry_height = 3
-    function_height = 3
-    y_pad = entry_height + function_height
+    y_pad = entry_height
     content_h = max(1, height - y_pad)
     pkt_h = max(1, int(height / 3))
 
@@ -103,8 +102,7 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         messages_win = curses.newwin(content_h, messages_width, 0, channel_width)
         nodes_win = curses.newwin(content_h, nodes_width, 0, channel_width + messages_width)
 
-        function_win = curses.newwin(function_height, width, height - entry_height - function_height, 0)
-        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - entry_height - function_height, channel_width)
+        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - entry_height, channel_width)
 
         # Will be resized to what we need when drawn
         messages_pad = curses.newpad(1, 1)
@@ -112,7 +110,7 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         channel_pad = curses.newpad(1, 1)
 
         # Set background colors for windows
-        for win in [entry_win, channel_win, messages_win, nodes_win, function_win, packetlog_win]:
+        for win in [entry_win, channel_win, messages_win, nodes_win, packetlog_win]:
             win.bkgd(get_color("background"))
 
         # Set background colors for pads
@@ -120,11 +118,11 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
             pad.bkgd(get_color("background"))
 
         # Set colors for window frames
-        for win in [channel_win, entry_win, nodes_win, messages_win, function_win]:
+        for win in [channel_win, entry_win, nodes_win, messages_win]:
             win.attrset(get_color("window_frame"))
 
     else:
-        for win in [entry_win, channel_win, messages_win, nodes_win, function_win, packetlog_win]:
+        for win in [entry_win, channel_win, messages_win, nodes_win, packetlog_win]:
             win.erase()
 
         entry_win.resize(entry_height, width)
@@ -139,14 +137,11 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         nodes_win.resize(content_h, nodes_width)
         nodes_win.mvwin(0, channel_width + messages_width)
 
-        function_win.resize(function_height, width)
-        function_win.mvwin(height - entry_height - function_height, 0)
-
         packetlog_win.resize(pkt_h, messages_width)
-        packetlog_win.mvwin(height - pkt_h - entry_height - function_height, channel_width)
+        packetlog_win.mvwin(height - pkt_h - entry_height, channel_width)
 
     # Draw window borders
-    for win in [channel_win, entry_win, nodes_win, messages_win, function_win]:
+    for win in [channel_win, entry_win, nodes_win, messages_win]:
         win.box()
         win.refresh()
 
@@ -154,7 +149,6 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     curses.curs_set(1)
 
     try:
-        draw_function_win()
         draw_channel_list()
         draw_messages_window(True)
         draw_node_list()
@@ -236,6 +230,9 @@ def main_ui(stdscr: curses.window) -> None:
 
         elif char == chr(31):  # Ctrl + / to search
             handle_ctrl_fslash()
+
+        elif char == chr(11):  # Ctrl + K for Help
+            handle_ctrl_k(stdscr)
 
         elif char == chr(6):  # Ctrl + F to toggle favorite
             handle_ctrl_f(stdscr)
@@ -344,7 +341,6 @@ def handle_leftright(char: int) -> None:
         paint_frame(messages_win, selected=False)
         refresh_pad(1)
     elif old_window == 2:
-        draw_function_win()
         paint_frame(nodes_win, selected=False)
         refresh_pad(2)
 
@@ -358,12 +354,12 @@ def handle_leftright(char: int) -> None:
         paint_frame(messages_win, selected=True)
         refresh_pad(1)
     elif ui_state.current_window == 2:
-        draw_function_win()
         paint_frame(nodes_win, selected=True)
         refresh_pad(2)
 
     # Draw arrows last; force even in multi-pane to avoid flicker
     draw_window_arrows(ui_state.current_window)
+
 
 def handle_function_keys(char: int) -> None:
     """Switch windows using F1/F2/F3."""
@@ -391,7 +387,6 @@ def handle_function_keys(char: int) -> None:
         paint_frame(messages_win, selected=False)
         refresh_pad(1)
     elif old_window == 2:
-        draw_function_win()
         paint_frame(nodes_win, selected=False)
         refresh_pad(2)
 
@@ -405,11 +400,11 @@ def handle_function_keys(char: int) -> None:
         paint_frame(messages_win, selected=True)
         refresh_pad(1)
     elif ui_state.current_window == 2:
-        draw_function_win()
         paint_frame(nodes_win, selected=True)
         refresh_pad(2)
 
     draw_window_arrows(ui_state.current_window)
+
 
 def handle_enter(input_text: str) -> str:
     """Handle Enter key events to send messages or select channels."""
@@ -454,6 +449,7 @@ def handle_enter(input_text: str) -> str:
         return ""
     return input_text
 
+
 def handle_f5_key(stdscr: curses.window) -> None:
     node = None
     try:
@@ -462,74 +458,76 @@ def handle_f5_key(stdscr: curses.window) -> None:
         return
 
     message_parts = []
-    
+
     message_parts.append("**📋 Basic Information:**")
     message_parts.append(f"• Device: {node.get('user', {}).get('longName', 'Unknown')}")
     message_parts.append(f"• Short name: {node.get('user', {}).get('shortName', 'Unknown')}")
     message_parts.append(f"• Hardware: {node.get('user', {}).get('hwModel', 'Unknown')}")
-    
+
     role = f"{node.get('user', {}).get('role', 'Unknown')}"
     message_parts.append(f"• Role: {role}")
-    
+
     pk = f"{node.get('user', {}).get('publicKey')}"
     message_parts.append(f"Public key: {pk}")
-    
+
     message_parts.append(f"• Node ID: {node.get('num', 'Unknown')}")
-    if 'position' in node:
-        pos = node['position']
-        if pos.get('latitude') and pos.get('longitude'):
+    if "position" in node:
+        pos = node["position"]
+        if pos.get("latitude") and pos.get("longitude"):
             message_parts.append(f"• Position: {pos['latitude']:.4f}, {pos['longitude']:.4f}")
-        if pos.get('altitude'):
+        if pos.get("altitude"):
             message_parts.append(f"• Altitude: {pos['altitude']}m")
         message_parts.append(f"https://maps.google.com/?q={pos['latitude']:.4f},{pos['longitude']:.4f}")
 
-    if any(key in node for key in ['snr', 'hopsAway', 'lastHeard']):
+    if any(key in node for key in ["snr", "hopsAway", "lastHeard"]):
         message_parts.append("\n**🌐 Network Metrics:**")
-    
-        if 'snr' in node:
-            snr = node['snr']
-            snr_status = "🟢 Excellent" if snr > 10 else "🟡 Good" if snr > 3 else "🟠 Fair" if snr > -10 else "🔴 Poor" if snr > -20 else "💀 Very Poor"
+
+        if "snr" in node:
+            snr = node["snr"]
+            snr_status = (
+                "🟢 Excellent"
+                if snr > 10
+                else "🟡 Good" if snr > 3 else "🟠 Fair" if snr > -10 else "🔴 Poor" if snr > -20 else "💀 Very Poor"
+            )
             message_parts.append(f"• SNR: {snr}dB {snr_status}")
-    
-        if 'hopsAway' in node:
-            hops = node['hopsAway']
-            hop_emoji = '📡' if hops == 0 else '🔄' if hops == 1 else '⏩'
+
+        if "hopsAway" in node:
+            hops = node["hopsAway"]
+            hop_emoji = "📡" if hops == 0 else "🔄" if hops == 1 else "⏩"
             message_parts.append(f"• Hops away: {hop_emoji} {hops}")
-    
-        if 'lastHeard' in node and node['lastHeard']:
+
+        if "lastHeard" in node and node["lastHeard"]:
             message_parts.append(f"• Last heard: 🕐 {get_time_ago(node['lastHeard'])}")
-    
-    if node.get('deviceMetrics'):
-        metrics = node['deviceMetrics']
+
+    if node.get("deviceMetrics"):
+        metrics = node["deviceMetrics"]
         message_parts.append("\n**📊 Device Metrics:**")
-    
-        if 'batteryLevel' in metrics:
-            battery = metrics['batteryLevel']
-            battery_emoji = '🟢' if battery > 50 else '🟡' if battery > 20 else '🔴'
-            voltage_info = f" ({metrics['voltage']}v)" if 'voltage' in metrics else ""
+
+        if "batteryLevel" in metrics:
+            battery = metrics["batteryLevel"]
+            battery_emoji = "🟢" if battery > 50 else "🟡" if battery > 20 else "🔴"
+            voltage_info = f" ({metrics['voltage']}v)" if "voltage" in metrics else ""
             message_parts.append(f"• Battery: {battery_emoji} {battery}%{voltage_info}")
-    
-        if 'uptimeSeconds' in metrics:
+
+        if "uptimeSeconds" in metrics:
             message_parts.append(f"• Uptime: ⏱️ {get_readable_duration(metrics['uptimeSeconds'])}")
-    
-        if 'channelUtilization' in metrics:
-            util = metrics['channelUtilization']
-            util_emoji = '🔴' if util > 80 else '🟡' if util > 50 else '🟢'
+
+        if "channelUtilization" in metrics:
+            util = metrics["channelUtilization"]
+            util_emoji = "🔴" if util > 80 else "🟡" if util > 50 else "🟢"
             message_parts.append(f"• Channel utilization: {util_emoji} {util:.2f}%")
-    
-        if 'airUtilTx' in metrics:
-            air_util = metrics['airUtilTx']
-            air_emoji = '🔴' if air_util > 80 else '🟡' if air_util > 50 else '🟢'
+
+        if "airUtilTx" in metrics:
+            air_util = metrics["airUtilTx"]
+            air_emoji = "🔴" if air_util > 80 else "🟡" if air_util > 50 else "🟢"
             message_parts.append(f"• Air utilization TX: {air_emoji} {air_util:.2f}%")
-    
+
     message = "\n".join(message_parts)
-    
-    contact.ui.dialog.dialog(
-        f"📡 Node Details: {node.get('user', {}).get('shortName', 'Unknown')}",
-        message
-    )
+
+    contact.ui.dialog.dialog(f"📡 Node Details: {node.get('user', {}).get('shortName', 'Unknown')}", message)
     curses.curs_set(1)  # Show cursor again
     handle_resize(stdscr, False)
+
 
 def handle_ctrl_t(stdscr: curses.window) -> None:
     """Handle Ctrl + T key events to send a traceroute."""
@@ -591,6 +589,34 @@ def handle_ctrl_p() -> None:
         ui_state.display_log = False
         packetlog_win.erase()
         draw_messages_window(True)
+
+
+# --- Ctrl+K handler for Help ---
+def handle_ctrl_k(stdscr: curses.window) -> None:
+    """Handle Ctrl + K to show a help window with shortcut keys."""
+    curses.curs_set(0)
+
+    cmds = [
+        "↑/↓ = Scroll",
+        "←/→ = Switch window",
+        "F1/F2/F3 = Jump to Channel/Messages/Nodes",
+        "ENTER = Send / Select",
+        "` or F12 = Settings",
+        "ESC = Quit",
+        "Ctrl+P = Toggle Packet Log",
+        "Ctrl+T or F4 = Traceroute",
+        "F5 = Full node info",
+        "Ctrl+D = Archive chat / remove node",
+        "Ctrl+F = Favorite",
+        "Ctrl+G = Ignore",
+        "Ctrl+/ = Search",
+        "Ctrl+K = Help",
+    ]
+
+    contact.ui.dialog.dialog("Help — Shortcut Keys", "\n".join(cmds))
+
+    curses.curs_set(1)
+    handle_resize(stdscr, False)
 
 
 def handle_ctrl_d() -> None:
@@ -827,10 +853,10 @@ def draw_node_list() -> None:
     for i, node_num in enumerate(ui_state.node_list):
         node = interface_state.interface.nodesByNum[node_num]
         secure = "user" in node and "publicKey" in node["user"] and node["user"]["publicKey"]
-        status_icon = '🔐' if secure else '🔓'
-        node_name = get_name_from_database(node_num, 'long')
-        user_name = node['user']['shortName']
-        
+        status_icon = "🔐" if secure else "🔓"
+        node_name = get_name_from_database(node_num, "long")
+        user_name = node["user"]["shortName"]
+
         uptime_str = ""
         if "deviceMetrics" in node and "uptimeSeconds" in node["deviceMetrics"]:
             uptime_str = f" / Up: {get_readable_duration(node['deviceMetrics']['uptimeSeconds'])}"
@@ -838,10 +864,10 @@ def draw_node_list() -> None:
         last_heard_str = f"  ■  {get_time_ago(node['lastHeard'])}" if node.get("lastHeard") else ""
         hops_str = f"  ■  Hops: {node['hopsAway']}" if "hopsAway" in node else ""
         snr_str = f"  ■  SNR: {node['snr']}dB" if node.get("hopsAway") == 0 and "snr" in node else ""
-        
+
         # Future node name custom formatting possible
         node_str = f"{status_icon} {node_name}"
-        node_str = node_str.ljust(box_width - 4)[:box_width - 2]
+        node_str = node_str.ljust(box_width - 4)[: box_width - 2]
         color = "node_list"
         if "isFavorite" in node and node["isFavorite"]:
             color = "node_favorite"
@@ -940,8 +966,6 @@ def select_node(idx: int) -> None:
         menu_pad=nodes_pad,
         ui_state=ui_state,
     )
-
-    draw_function_win()
 
 
 def scroll_nodes(direction: int) -> None:
@@ -1059,101 +1083,6 @@ def search(win: int) -> None:
     entry_win.erase()
 
 
-def draw_node_details() -> None:
-    """Draw the details of the selected node in the function window."""
-    node = None
-    try:
-        node = interface_state.interface.nodesByNum[ui_state.node_list[ui_state.selected_node]]
-    except KeyError:
-        return
-
-    function_win.erase()
-    function_win.box()
-
-    nodestr = ""
-    width = function_win.getmaxyx()[1]
-
-    node_details_list = [
-        f"{node['user']['longName']} " if "user" in node and "longName" in node["user"] else "",
-        f"({node['user']['shortName']})" if "user" in node and "shortName" in node["user"] else "",
-        f" | {node['user']['hwModel']}" if "user" in node and "hwModel" in node["user"] else "",
-        f" | {node['user']['role']}" if "user" in node and "role" in node["user"] else "",
-    ]
-
-    if ui_state.node_list[ui_state.selected_node] == interface_state.myNodeNum:
-        node_details_list.extend(
-            [
-                (
-                    f" | Bat: {node['deviceMetrics']['batteryLevel']}% ({node['deviceMetrics']['voltage']}v)"
-                    if "deviceMetrics" in node
-                    and "batteryLevel" in node["deviceMetrics"]
-                    and "voltage" in node["deviceMetrics"]
-                    else ""
-                ),
-                (
-                    f" | Up: {get_readable_duration(node['deviceMetrics']['uptimeSeconds'])}"
-                    if "deviceMetrics" in node and "uptimeSeconds" in node["deviceMetrics"]
-                    else ""
-                ),
-                (
-                    f" | ChUtil: {node['deviceMetrics']['channelUtilization']:.2f}%"
-                    if "deviceMetrics" in node and "channelUtilization" in node["deviceMetrics"]
-                    else ""
-                ),
-                (
-                    f" | AirUtilTX: {node['deviceMetrics']['airUtilTx']:.2f}%"
-                    if "deviceMetrics" in node and "airUtilTx" in node["deviceMetrics"]
-                    else ""
-                ),
-            ]
-        )
-    else:
-        node_details_list.extend(
-            [
-                f" | {get_time_ago(node['lastHeard'])}" if ("lastHeard" in node and node["lastHeard"]) else "",
-                f" | Hops: {node['hopsAway']}" if "hopsAway" in node else "",
-                f" | SNR: {node['snr']}dB" if ("snr" in node and "hopsAway" in node and node["hopsAway"] == 0) else "",
-            ]
-        )
-
-    for s in node_details_list:
-        if len(nodestr) + len(s) < width - 2:
-            nodestr = nodestr + s
-
-    draw_centered_text_field(function_win, nodestr, 0, get_color("commands"))
-
-
-def draw_help() -> None:
-    """Draw the help text in the function window."""
-    cmds = [
-        "↑→↓← = Select",
-        "   F1/F2/F3 - Select windows",
-        "   ENTER = Send",
-        "   \"`\"/F12 = Settings",
-        "   ESC = Quit",
-        "   ^P = Packet Log",
-        "   ^t/F4 = Traceroute",
-        "   F5 = Full node info",
-        "   ^d = Archive Chat",
-        "   ^f = Favorite",
-        "   ^g = Ignore",
-        "   ^/ = Search",
-    ]
-    function_str = ""
-    for s in cmds:
-        if len(function_str) + len(s) < function_win.getmaxyx()[1] - 2:
-            function_str += s
-
-    draw_centered_text_field(function_win, function_str, 0, get_color("commands"))
-
-
-def draw_function_win() -> None:
-    if ui_state.current_window == 2:
-        draw_node_details()
-    else:
-        draw_help()
-
-
 def refresh_pad(window: int) -> None:
     # Derive the target box and pad for the requested window
     win_height = channel_win.getmaxyx()[0]
@@ -1236,7 +1165,23 @@ def remove_notification(channel_number: int) -> None:
 
 def draw_text_field(win: curses.window, text: str, color: int) -> None:
     win.border()
-    win.addstr(1, 1, text, color)
+
+    # Put a small hint in the border of the message entry field.
+    # We key off the "Message:" prompt to avoid affecting other bordered fields.
+    if isinstance(text, str) and text.startswith("Message:"):
+        hint = " Ctrl+K Help "
+        h, w = win.getmaxyx()
+        x = max(2, w - len(hint) - 2)
+        try:
+            win.addstr(0, x, hint, get_color("commands"))
+        except curses.error:
+            pass
+
+    # Draw the actual field text
+    try:
+        win.addstr(1, 1, text, color)
+    except curses.error:
+        pass
 
 
 def draw_centered_text_field(win: curses.window, text: str, y_offset: int, color: int) -> None:
@@ -1245,8 +1190,3 @@ def draw_centered_text_field(win: curses.window, text: str, y_offset: int, color
     y = (height // 2) + y_offset
     win.addstr(y, x, text, color)
     win.refresh()
-
-
-def draw_debug(value: Union[str, int]) -> None:
-    function_win.addstr(1, 1, f"debug: {value}    ")
-    function_win.refresh()
