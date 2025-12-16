@@ -182,15 +182,12 @@ def parse_protobuf(packet: dict) -> Union[str, dict]:
             return payload
 
         # These portnumbers carry information visible elswhere in the app, so we just note them in the logs
-        match portnum:
-            case "TEXT_MESSAGE_APP":
-                return "✉️"
-            case "NODEINFO_APP":
-                return "Name identification payload"
-            case "TRACEROUTE_APP":
-                return "Traceroute payload"
-            case _:
-                pass
+        if portnum == "TEXT_MESSAGE_APP":
+            return "✉️"
+        elif portnum == "NODEINFO_APP":
+            return "Name identification payload"
+        elif portnum == "TRACEROUTE_APP":
+            return "Traceroute payload"
 
         handler = protocols.get(portnums_pb2.PortNum.Value(portnum)) if portnum is not None else None
         if handler is not None and handler.protobufFactory is not None:
