@@ -357,7 +357,6 @@ def handle_leftright(char: int) -> None:
         paint_frame(nodes_win, selected=True)
         refresh_pad(2)
 
-    # Draw arrows last; force even in multi-pane to avoid flicker
     draw_window_arrows(ui_state.current_window)
 
 
@@ -1084,6 +1083,11 @@ def search(win: int) -> None:
 
 
 def refresh_pad(window: int) -> None:
+
+    # If in single-pane mode and this isn't the focused window, skip refreshing its (collapsed) pad
+    if ui_state.single_pane_mode and window != ui_state.current_window:
+        return
+
     # Derive the target box and pad for the requested window
     win_height = channel_win.getmaxyx()[0]
 
@@ -1112,10 +1116,6 @@ def refresh_pad(window: int) -> None:
         lines = box.getmaxyx()[0] - 2
         selected_item = ui_state.selected_channel
         start_index = max(0, selected_item - (win_height - 3))  # Leave room for borders
-
-    # If in single-pane mode and this isn't the focused window, skip refreshing its (collapsed) pad
-    if ui_state.single_pane_mode and window != ui_state.current_window:
-        return
 
     # Compute inner drawable area of the box
     box_y, box_x = box.getbegyx()
