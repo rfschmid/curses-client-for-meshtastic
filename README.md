@@ -42,7 +42,7 @@ For smaller displays you may wish to enable `single_pane_mode`:
 - `↑→↓←` = Navigate around the UI.
 - `F1/F2/F3` = Jump to Channel/Messages/Nodes
 - `ENTER` = Send a message typed in the Input Window, or with the Node List highlighted, select a node to DM
--  `` ` or F12` = Open the Settings dialogue
+-  `` `` `or F12` = Open the Settings dialogue
 - `CTRL` + `p` = Hide/show a log of raw received packets.
 - `CTRL` + `t` or `F4` = With the Node List highlighted, send a traceroute to the selected node
 - `F5` = Display a node's info
