@@ -55,10 +55,12 @@ field_mapping, help_text = parse_ini_file(translation_file)
 
 
 def display_menu() -> tuple[object, object]:
-    if help_win:
-        min_help_window_height = 6
-    else:
-        min_help_window_height = 0
+    # if help_win:
+    #     min_help_window_height = 6
+    # else:
+    #     min_help_window_height = 0
+
+    min_help_window_height = 6
 
     num_items = len(menu_state.current_menu) + (1 if menu_state.show_save_option else 0)
 
