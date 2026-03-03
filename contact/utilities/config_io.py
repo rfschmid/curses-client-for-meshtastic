@@ -9,6 +9,17 @@ from meshtastic.util import camel_to_snake, snake_to_camel, fromStr
 # defs are from meshtastic/python/main
 
 
+def _is_repeated_field(field_desc) -> bool:
+    """Return True if the protobuf field is repeated.
+
+    Protobuf 6.31.0+ exposes `is_repeated`, while older versions require
+    checking `label == LABEL_REPEATED`.
+    """
+    if hasattr(field_desc, "is_repeated"):
+        return bool(field_desc.is_repeated)
+    return field_desc.label == field_desc.LABEL_REPEATED
+
+
 def traverseConfig(config_root, config, interface_config) -> bool:
     """Iterate through current config level preferences and either traverse deeper if preference is a dict or set preference"""
     snake_name = camel_to_snake(config_root)
@@ -89,7 +100,7 @@ def setPref(config, comp_name, raw_val) -> bool:
             return False
 
     # repeating fields need to be handled with append, not setattr
-    if pref.label != pref.LABEL_REPEATED:
+    if not _is_repeated_field(pref):
         try:
             if config_type.message_type is not None:
                 config_values = getattr(config_part, config_type.name)
