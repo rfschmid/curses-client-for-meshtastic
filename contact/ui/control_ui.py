@@ -56,6 +56,13 @@ config_folder = os.path.abspath(config.node_configs_file_path)
 # Load translations
 field_mapping, help_text = parse_ini_file(translation_file)
 
+def _is_repeated_field(field_desc) -> bool:
+    """Return True if the protobuf field is repeated. 
+       Protobuf 6.31.0 and later use an is_repeated property, while older versions compare against the label field.
+       """
+    if hasattr(field_desc, "is_repeated"):
+        return bool(field_desc.is_repeated)
+    return field_desc.label == field_desc.LABEL_REPEATED
 
 def reload_translations() -> None:
     global translation_file, field_mapping, help_text
@@ -564,7 +571,7 @@ def settings_menu(stdscr: object, interface: object) -> None:
                         new_value = new_value == "True" or new_value is True
                     menu_state.start_index.pop()
 
-                elif field.label == field.LABEL_REPEATED:  # Handle repeated field - Not currently used
+                elif _is_repeated_field(field):  # Handle repeated field - Not currently used
                     new_value = get_repeated_input(current_value)
                     new_value = current_value if new_value is None else new_value.split(", ")
                     menu_state.start_index.pop()
