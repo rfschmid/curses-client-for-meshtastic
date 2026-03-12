@@ -19,6 +19,7 @@ from contact.utilities.singleton import ui_state, interface_state, menu_state
 
 
 MIN_COL = 1  # "effectively zero" without breaking curses
+RESIZE_DEBOUNCE_MS = 250
 root_win = None
 
 
@@ -161,6 +162,24 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         pass
 
 
+def drain_resize_events(input_win: curses.window) -> Union[str, int, None]:
+    """Wait for resize events to settle and preserve one queued non-resize key."""
+    input_win.timeout(RESIZE_DEBOUNCE_MS)
+    try:
+        while True:
+            try:
+                next_char = input_win.get_wch()
+            except curses.error:
+                return None
+
+            if next_char == curses.KEY_RESIZE:
+                continue
+
+            return next_char
+    finally:
+        input_win.timeout(-1)
+
+
 def main_ui(stdscr: curses.window) -> None:
     """Main UI loop for the curses interface."""
     global input_text
@@ -168,6 +187,7 @@ def main_ui(stdscr: curses.window) -> None:
 
     root_win = stdscr
     input_text = ""
+    queued_char = None
     stdscr.keypad(True)
     get_channels()
     handle_resize(stdscr, True)
@@ -176,7 +196,11 @@ def main_ui(stdscr: curses.window) -> None:
         draw_text_field(entry_win, f"Message: {(input_text or '')[-(stdscr.getmaxyx()[1] - 10):]}", get_color("input"))
 
         # Get user input from entry window
-        char = entry_win.get_wch()
+        if queued_char is None:
+            char = entry_win.get_wch()
+        else:
+            char = queued_char
+            queued_char = None
 
         # draw_debug(f"Keypress: {char}")
 
@@ -224,7 +248,9 @@ def main_ui(stdscr: curses.window) -> None:
 
         elif char == curses.KEY_RESIZE:
             input_text = ""
+            queued_char = drain_resize_events(entry_win)
             handle_resize(stdscr, False)
+            continue
 
         elif char == chr(4):  # Ctrl + D to delete current channel or node
             handle_ctrl_d()
