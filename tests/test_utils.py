@@ -60,6 +60,28 @@ class UtilsTests(unittest.TestCase):
         self.assertIn("MediumFast", ui_state.all_messages)
         self.assertIn("Another Channel", ui_state.all_messages)
 
+    def test_get_channels_rebuilds_renamed_channels_and_preserves_messages(self) -> None:
+        interface = build_demo_interface()
+        interface.localNode.channels[0].settings.name = "Renamed Channel"
+        interface_state.interface = interface
+        ui_state.channel_list = ["MediumFast", "Another Channel", 2701131788]
+        ui_state.all_messages = {
+            "MediumFast": [("prefix", "first")],
+            "Another Channel": [("prefix", "second")],
+            2701131788: [("prefix", "dm")],
+        }
+        ui_state.selected_channel = 2
+
+        channels = get_channels()
+
+        self.assertEqual(channels[0], "Renamed Channel")
+        self.assertEqual(channels[1], "Another Channel")
+        self.assertEqual(channels[2], 2701131788)
+        self.assertEqual(ui_state.all_messages["Renamed Channel"], [("prefix", "first")])
+        self.assertEqual(ui_state.all_messages["Another Channel"], [("prefix", "second")])
+        self.assertEqual(ui_state.all_messages[2701131788], [("prefix", "dm")])
+        self.assertNotIn("MediumFast", ui_state.all_messages)
+
     def test_parse_protobuf_returns_string_payload_unchanged(self) -> None:
         packet = {"decoded": {"portnum": "TEXT_MESSAGE_APP", "payload": "hello"}}
 

@@ -9,6 +9,7 @@ from typing import List
 from contact.utilities.save_to_radio import save_changes
 import contact.ui.default_config as config
 from contact.utilities.config_io import config_export, config_import
+from contact.utilities.interfaces import reconnect_interface
 from contact.utilities.control_utils import transform_menu_path
 from contact.utilities.i18n import t
 from contact.utilities.ini_utils import parse_ini_file
@@ -23,8 +24,10 @@ from contact.ui.colors import get_color
 from contact.ui.dialog import dialog
 from contact.ui.menus import generate_menu_from_protobuf
 from contact.ui.nav_utils import move_highlight, draw_arrows, update_help_window
+from contact.ui.splash import draw_splash
 from contact.ui.user_config import json_editor
-from contact.utilities.singleton import menu_state
+from contact.utilities.arg_parser import setup_parser
+from contact.utilities.singleton import interface_state, menu_state
 
 # Setup Variables
 MAX_MENU_WIDTH = 80  # desired max; will shrink on small terminals
@@ -222,6 +225,39 @@ def get_input_type_for_field(field) -> type:
         return str
 
 
+def reconnect_interface_with_splash(stdscr: object, interface: object) -> object:
+    try:
+        interface.close()
+    except Exception:
+        pass
+
+    stdscr.clear()
+    stdscr.refresh()
+    draw_splash(stdscr)
+    new_interface = reconnect_interface(setup_parser().parse_args())
+    interface_state.interface = new_interface
+    redraw_main_ui_after_reconnect(stdscr)
+    return new_interface
+
+
+def reconnect_after_admin_action(stdscr: object, interface: object, action, log_message: str) -> object:
+    action()
+    logging.info(log_message)
+    return reconnect_interface_with_splash(stdscr, interface)
+
+
+def redraw_main_ui_after_reconnect(stdscr: object) -> None:
+    try:
+        from contact.ui import contact_ui
+        from contact.utilities.utils import get_channels, refresh_node_list
+
+        get_channels()
+        refresh_node_list()
+        contact_ui.handle_resize(stdscr, False)
+    except Exception:
+        logging.debug("Skipping main UI redraw after reconnect", exc_info=True)
+
+
 def settings_menu(stdscr: object, interface: object) -> None:
     curses.update_lines_cols()
 
@@ -330,9 +366,12 @@ def settings_menu(stdscr: object, interface: object) -> None:
                 help_win.refresh()
 
             if menu_state.show_save_option and menu_state.selected_index == len(options):
-                save_changes(interface, modified_settings, menu_state)
+                reconnect_required = save_changes(interface, modified_settings, menu_state)
                 modified_settings.clear()
                 logging.info("Changes Saved")
+                if reconnect_required:
+                    interface = reconnect_interface_with_splash(stdscr, interface)
+                    menu = generate_menu_from_protobuf(interface)
 
                 if len(menu_state.menu_path) > 1:
                     menu_state.menu_path.pop()
@@ -460,8 +499,10 @@ def settings_menu(stdscr: object, interface: object) -> None:
                     t("ui.confirm.reboot", default="Are you sure you want to Reboot?"), None, ["Yes", "No"]
                 )
                 if confirmation == "Yes":
-                    interface.localNode.reboot()
-                    logging.info(f"Node Reboot Requested by menu")
+                    interface = reconnect_after_admin_action(
+                        stdscr, interface, interface.localNode.reboot, "Node Reboot Requested by menu"
+                    )
+                    menu = rebuild_menu_at_current_path(interface, menu_state)
                 menu_state.start_index.pop()
                 continue
 
@@ -472,8 +513,10 @@ def settings_menu(stdscr: object, interface: object) -> None:
                     ["Yes", "No"],
                 )
                 if confirmation == "Yes":
-                    interface.localNode.resetNodeDb()
-                    logging.info(f"Node DB Reset Requested by menu")
+                    interface = reconnect_after_admin_action(
+                        stdscr, interface, interface.localNode.resetNodeDb, "Node DB Reset Requested by menu"
+                    )
+                    menu = rebuild_menu_at_current_path(interface, menu_state)
                 menu_state.start_index.pop()
                 continue
 
@@ -494,8 +537,10 @@ def settings_menu(stdscr: object, interface: object) -> None:
                     ["Yes", "No"],
                 )
                 if confirmation == "Yes":
-                    interface.localNode.factoryReset()
-                    logging.info(f"Factory Reset Requested by menu")
+                    interface = reconnect_after_admin_action(
+                        stdscr, interface, interface.localNode.factoryReset, "Factory Reset Requested by menu"
+                    )
+                    menu = rebuild_menu_at_current_path(interface, menu_state)
                 menu_state.start_index.pop()
                 continue
 
@@ -655,8 +700,10 @@ def settings_menu(stdscr: object, interface: object) -> None:
                 if save_prompt == "Cancel":
                     continue  # Stay in the menu without doing anything
                 elif save_prompt == "Yes":
-                    save_changes(interface, modified_settings, menu_state)
+                    reconnect_required = save_changes(interface, modified_settings, menu_state)
                     logging.info("Changes Saved")
+                    if reconnect_required:
+                        interface = reconnect_interface_with_splash(stdscr, interface)
 
                 modified_settings.clear()
                 menu = rebuild_menu_at_current_path(interface, menu_state)

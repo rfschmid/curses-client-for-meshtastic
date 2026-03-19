@@ -774,6 +774,7 @@ def handle_backtick(stdscr: curses.window) -> None:
     ui_state.current_window = previous_window
     ui_state.single_pane_mode = config.single_pane_mode.lower() == "true"
     curses.curs_set(1)
+    get_channels()
     refresh_node_list()
     handle_resize(stdscr, False)
 

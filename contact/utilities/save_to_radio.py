@@ -4,6 +4,79 @@ import logging
 import base64
 import time
 
+DEVICE_REBOOT_KEYS = {"button_gpio", "buzzer_gpio", "role", "rebroadcast_mode"}
+POWER_REBOOT_KEYS = {
+    "device_battery_ina_address",
+    "is_power_saving",
+    "ls_secs",
+    "min_wake_secs",
+    "on_battery_shutdown_after_secs",
+    "sds_secs",
+    "wait_bluetooth_secs",
+}
+DISPLAY_REBOOT_KEYS = {"screen_on_secs", "flip_screen", "oled", "displaymode"}
+LORA_REBOOT_KEYS = {
+    "use_preset",
+    "region",
+    "modem_preset",
+    "bandwidth",
+    "spread_factor",
+    "coding_rate",
+    "tx_power",
+    "frequency_offset",
+    "override_frequency",
+    "channel_num",
+    "sx126x_rx_boosted_gain",
+}
+SECURITY_NON_REBOOT_KEYS = {"debug_log_api_enabled", "serial_enabled"}
+USER_RECONNECT_KEYS = {"longName", "shortName", "isLicensed", "is_licensed"}
+
+
+def _collect_changed_keys(modified_settings):
+    changed = set()
+    for key, value in modified_settings.items():
+        if isinstance(value, dict):
+            changed.update(_collect_changed_keys(value))
+        else:
+            changed.add(key)
+    return changed
+
+
+def _requires_reconnect(menu_state, modified_settings) -> bool:
+    if not modified_settings or len(menu_state.menu_path) < 2:
+        return False
+
+    section = menu_state.menu_path[1]
+    changed_keys = _collect_changed_keys(modified_settings)
+
+    if section == "Module Settings":
+        return True
+    if section == "User Settings":
+        return bool(changed_keys & USER_RECONNECT_KEYS)
+    if section == "Channels":
+        return False
+    if section != "Radio Settings" or len(menu_state.menu_path) < 3:
+        return False
+
+    config_category = menu_state.menu_path[2].lower()
+
+    if config_category in {"network", "bluetooth"}:
+        return True
+    if config_category == "security":
+        return not changed_keys.issubset(SECURITY_NON_REBOOT_KEYS)
+    if config_category == "device":
+        return bool(changed_keys & DEVICE_REBOOT_KEYS)
+    if config_category == "power":
+        return bool(changed_keys & POWER_REBOOT_KEYS)
+    if config_category == "display":
+        return bool(changed_keys & DISPLAY_REBOOT_KEYS)
+    if config_category == "lora":
+        return bool(changed_keys & LORA_REBOOT_KEYS)
+
+    # Firmware defaults most config writes to reboot-required unless a handler
+    # explicitly clears that flag.
+    return True
+
 
 def save_changes(interface, modified_settings, menu_state):
     """
@@ -15,7 +88,7 @@ def save_changes(interface, modified_settings, menu_state):
     try:
         if not modified_settings:
             logging.info("No changes to save. modified_settings is empty.")
-            return
+            return False
 
         node = interface.getNode("^local")
         admin_key_backup = None
@@ -51,7 +124,7 @@ def save_changes(interface, modified_settings, menu_state):
 
             # Return early if there are no other settings left to process
             if not modified_settings:
-                return
+                return _requires_reconnect(menu_state, {"admin_key": admin_key_backup})
 
         if menu_state.menu_path[1] == "Radio Settings" or menu_state.menu_path[1] == "Module Settings":
             config_category = menu_state.menu_path[2].lower()  # for radio and module configs
@@ -63,7 +136,7 @@ def save_changes(interface, modified_settings, menu_state):
 
                 interface.localNode.setFixedPosition(lat, lon, alt)
                 logging.info(f"Updated {config_category} with Latitude: {lat} and Longitude {lon} and Altitude {alt}")
-                return
+                return False
 
         elif menu_state.menu_path[1] == "User Settings":  # for user configs
             config_category = "User Settings"
@@ -78,7 +151,7 @@ def save_changes(interface, modified_settings, menu_state):
                 f"Updated {config_category} with Long Name: {long_name}, Short Name: {short_name}, Licensed Mode: {is_licensed}"
             )
 
-            return
+            return _requires_reconnect(menu_state, modified_settings)
 
         elif menu_state.menu_path[1] == "Channels":  # for channel configs
             config_category = "Channels"
@@ -107,7 +180,7 @@ def save_changes(interface, modified_settings, menu_state):
 
             logging.info(f"Updated Channel {channel_num} in {config_category}")
             logging.info(node.channels)
-            return
+            return False
 
         else:
             config_category = None
@@ -120,7 +193,7 @@ def save_changes(interface, modified_settings, menu_state):
             config_container = getattr(node.moduleConfig, config_category)
         else:
             logging.warning(f"Config category '{config_category}' not found in config.")
-            return
+            return False
 
         if len(menu_state.menu_path) >= 4:
             nested_key = menu_state.menu_path[3]
@@ -164,8 +237,11 @@ def save_changes(interface, modified_settings, menu_state):
 
             if admin_key_backup is not None:
                 modified_settings["admin_key"] = admin_key_backup
+            return _requires_reconnect(menu_state, modified_settings)
         except Exception as e:
             logging.error(f"Failed to write configuration for category '{config_category}': {e}")
+            return False
 
     except Exception as e:
         logging.error(f"Error saving changes: {e}")
+        return False

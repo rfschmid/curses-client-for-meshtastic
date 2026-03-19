@@ -10,35 +10,50 @@ from contact.utilities.singleton import ui_state, interface_state
 import contact.utilities.telemetry_beautifier as tb
 
 
+def _get_channel_name(device_channel, node):
+    if device_channel.settings.name:
+        return device_channel.settings.name
+
+    lora_config = node.localConfig.lora
+    modem_preset_enum = lora_config.modem_preset
+    modem_preset_string = config_pb2._CONFIG_LORACONFIG_MODEMPRESET.values_by_number[modem_preset_enum].name
+    return convert_to_camel_case(modem_preset_string)
+
+
 def get_channels():
-    """Retrieve channels from the node and update ui_state.channel_list and ui_state.all_messages."""
+    """Retrieve channels from the node and rebuild named channel state."""
     node = interface_state.interface.getNode("^local")
     device_channels = node.channels
+    previous_channel_list = list(ui_state.channel_list)
+    previous_messages = dict(ui_state.all_messages)
 
-    # Clear and rebuild channel list
-    # ui_state.channel_list = []
+    named_channels = []
 
     for device_channel in device_channels:
         if device_channel.role:
-            # Use the channel name if available, otherwise use the modem preset
-            if device_channel.settings.name:
-                channel_name = device_channel.settings.name
-            else:
-                # If channel name is blank, use the modem preset
-                lora_config = node.localConfig.lora
-                modem_preset_enum = lora_config.modem_preset
-                modem_preset_string = config_pb2._CONFIG_LORACONFIG_MODEMPRESET.values_by_number[
-                    modem_preset_enum
-                ].name
-                channel_name = convert_to_camel_case(modem_preset_string)
+            named_channels.append(_get_channel_name(device_channel, node))
 
-            # Add channel to ui_state.channel_list if not already present
-            if channel_name not in ui_state.channel_list:
-                ui_state.channel_list.append(channel_name)
+    previous_named_channels = [channel for channel in previous_channel_list if isinstance(channel, str)]
+    preserved_direct_channels = [channel for channel in previous_channel_list if isinstance(channel, int)]
+    rebuilt_messages = {}
 
-            # Initialize ui_state.all_messages[channel_name] if it doesn't exist
-            if channel_name not in ui_state.all_messages:
-                ui_state.all_messages[channel_name] = []
+    for index, channel_name in enumerate(named_channels):
+        previous_name = previous_named_channels[index] if index < len(previous_named_channels) else channel_name
+        if previous_name in previous_messages:
+            rebuilt_messages[channel_name] = previous_messages[previous_name]
+        elif channel_name in previous_messages:
+            rebuilt_messages[channel_name] = previous_messages[channel_name]
+        else:
+            rebuilt_messages[channel_name] = []
+
+    for channel in preserved_direct_channels:
+        if channel in previous_messages:
+            rebuilt_messages[channel] = previous_messages[channel]
+
+    ui_state.channel_list = named_channels + preserved_direct_channels
+    ui_state.all_messages = rebuilt_messages
+    if ui_state.channel_list:
+        ui_state.selected_channel = max(0, min(ui_state.selected_channel, len(ui_state.channel_list) - 1))
 
     return ui_state.channel_list
 
