@@ -35,5 +35,10 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--settings", "--set", "--control", "-c", help="Launch directly into the settings", action="store_true"
     )
+    parser.add_argument(
+        "--demo-screenshot",
+        help="Launch with a fake interface and seeded demo data for screenshots/testing.",
+        action="store_true",
+    )
 
     return parser
