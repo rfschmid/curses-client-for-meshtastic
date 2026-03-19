@@ -566,7 +566,7 @@ def save_json(file_path: str, data: Dict[str, Any]) -> None:
     formatted_json = config.format_json_single_line_arrays(data)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(formatted_json)
-    setup_colors(reinit=True)
+    config.reload_config()
     reload_translations(data.get("language"))
 
 
