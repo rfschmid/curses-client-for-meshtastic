@@ -18,7 +18,7 @@ class NavUtilsTests(unittest.TestCase):
     def test_truncate_with_ellipsis_respects_display_width(self) -> None:
         self.assertEqual(truncate_with_ellipsis("🔐Alpha", 5), "🔐Al…")
 
-    def test_highlight_line_uses_full_node_row_width(self) -> None:
+    def test_highlight_line_reserves_scroll_arrow_column_for_nodes(self) -> None:
         ui_state.current_window = 2
         ui_state.start_index = [0, 0, 0]
         menu_win = mock.Mock()
@@ -32,5 +32,5 @@ class NavUtilsTests(unittest.TestCase):
 
         self.assertEqual(
             menu_pad.chgat.call_args_list,
-            [mock.call(0, 1, 18, 11), mock.call(1, 1, 18, 22)],
+            [mock.call(0, 1, 16, 11), mock.call(1, 1, 16, 22)],
         )

@@ -457,8 +457,8 @@ def highlight_line(
         menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 4, color_new)
 
     elif ui_state.current_window == 2:
-        menu_pad.chgat(old_idx, 1, menu_pad.getmaxyx()[1] - 2, get_node_color(old_idx))
-        menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 2, get_node_color(new_idx, reverse=True))
+        menu_pad.chgat(old_idx, 1, menu_pad.getmaxyx()[1] - 4, get_node_color(old_idx))
+        menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 4, get_node_color(new_idx, reverse=True))
 
     menu_win.refresh()
 

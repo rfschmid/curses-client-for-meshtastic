@@ -3,6 +3,7 @@ from unittest import mock
 
 import contact.ui.default_config as config
 from contact.ui import contact_ui
+from contact.ui.nav_utils import text_width
 from contact.utilities.singleton import ui_state
 
 from tests.test_support import reset_singletons, restore_config, snapshot_config
@@ -69,7 +70,7 @@ class ContactUiTests(unittest.TestCase):
         self.assertFalse(ui_state.redraw_channels)
         self.assertFalse(ui_state.redraw_messages)
 
-    def test_refresh_node_selection_highlights_full_row_width(self) -> None:
+    def test_refresh_node_selection_reserves_scroll_arrow_column(self) -> None:
         ui_state.node_list = [101, 202]
         ui_state.selected_node = 1
         ui_state.start_index = [0, 0, 0]
@@ -89,10 +90,51 @@ class ContactUiTests(unittest.TestCase):
 
         self.assertEqual(
             contact_ui.nodes_pad.chgat.call_args_list,
-            [mock.call(0, 1, 18, 11), mock.call(1, 1, 18, 22)],
+            [mock.call(0, 1, 16, 11), mock.call(1, 1, 16, 22)],
         )
         refresh_pad.assert_called_once_with(2)
         draw_window_arrows.assert_called_once_with(2)
+
+    def test_draw_channel_list_reserves_scroll_arrow_column(self) -> None:
+        ui_state.channel_list = ["VeryLongChannelName"]
+        ui_state.notifications = []
+        ui_state.selected_channel = 0
+        ui_state.current_window = 0
+        contact_ui.channel_pad = mock.Mock()
+        contact_ui.channel_win = mock.Mock()
+        contact_ui.channel_win.getmaxyx.return_value = (10, 20)
+
+        with mock.patch.object(contact_ui, "get_color", return_value=1):
+            with mock.patch.object(contact_ui, "paint_frame"):
+                with mock.patch.object(contact_ui, "refresh_pad"):
+                    with mock.patch.object(contact_ui, "draw_window_arrows"):
+                        with mock.patch.object(contact_ui, "remove_notification"):
+                            contact_ui.draw_channel_list()
+
+        text = contact_ui.channel_pad.addstr.call_args.args[2]
+        self.assertEqual(len(text), 16)
+
+    def test_draw_node_list_reserves_scroll_arrow_column(self) -> None:
+        ui_state.node_list = [101]
+        ui_state.current_window = 2
+        contact_ui.nodes_pad = mock.Mock()
+        contact_ui.nodes_win = mock.Mock()
+        contact_ui.nodes_win.getmaxyx.return_value = (10, 20)
+        contact_ui.entry_win = mock.Mock()
+        interface = mock.Mock()
+        interface.nodesByNum = {101: {"user": {"longName": "VeryLongNodeName", "publicKey": ""}}}
+
+        with mock.patch("contact.ui.contact_ui.interface_state.interface", interface):
+            with mock.patch.object(contact_ui, "get_node_row_color", return_value=1):
+                with mock.patch.object(contact_ui.curses, "curs_set"):
+                    with mock.patch.object(contact_ui, "paint_frame"):
+                        with mock.patch.object(contact_ui, "refresh_pad"):
+                            with mock.patch.object(contact_ui, "draw_window_arrows"):
+                                contact_ui.draw_node_list()
+
+        text = contact_ui.nodes_pad.addstr.call_args.args[2]
+        self.assertEqual(text_width(text), 16)
+        self.assertIn("…", text)
 
     def test_handle_resize_single_pane_keeps_full_width_windows(self) -> None:
         stdscr = mock.Mock()

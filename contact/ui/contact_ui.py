@@ -143,7 +143,7 @@ def refresh_node_selection(old_index: int = -1, highlight: bool = False) -> None
     if nodes_pad is None or not ui_state.node_list:
         return
 
-    width = max(0, nodes_pad.getmaxyx()[1] - 2)
+    width = max(0, nodes_pad.getmaxyx()[1] - 4)
 
     if 0 <= old_index < len(ui_state.node_list):
         try:
@@ -175,7 +175,7 @@ def refresh_main_window(window_id: int, selected: bool) -> None:
     elif window_id == 2:
         paint_frame(nodes_win, selected=selected)
         if ui_state.node_list and nodes_pad is not None:
-            width = max(0, nodes_pad.getmaxyx()[1] - 2)
+            width = max(0, nodes_pad.getmaxyx()[1] - 4)
             nodes_pad.chgat(ui_state.selected_node, 1, width, get_node_row_color(ui_state.selected_node))
         refresh_pad(2)
 
@@ -1089,7 +1089,7 @@ def draw_channel_list() -> None:
         notification = " " + config.notification_symbol if idx in ui_state.notifications else ""
 
         # Truncate the channel name if it's too long to fit in the window
-        truncated_channel = truncate_with_ellipsis(f"{channel}{notification}", win_width - 3)
+        truncated_channel = truncate_with_ellipsis(f"{channel}{notification}", win_width - 4)
 
         color = get_color("channel_list")
         if idx == ui_state.selected_channel:
@@ -1184,7 +1184,7 @@ def draw_node_list() -> None:
         node_name = get_node_display_name(node_num, node)
 
         # Future node name custom formatting possible
-        node_str = pad_to_width(f"{status_icon} {node_name}", box_width - 2)
+        node_str = truncate_with_ellipsis(f"{status_icon} {node_name}", box_width - 4)
         nodes_pad.addstr(i, 1, node_str, get_node_row_color(i))
 
     paint_frame(nodes_win, selected=(ui_state.current_window == 2))
