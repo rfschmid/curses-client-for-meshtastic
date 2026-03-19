@@ -22,6 +22,7 @@ from contact.utilities.singleton import ui_state, interface_state, menu_state
 MIN_COL = 1  # "effectively zero" without breaking curses
 RESIZE_DEBOUNCE_MS = 250
 root_win = None
+nodes_pad = None
 
 
 # Draw arrows for a specific window id (0=channel,1=messages,2=nodes).
@@ -62,6 +63,48 @@ def paint_frame(win, selected: bool) -> None:
     win.box()
     win.attrset(get_color("window_frame"))
     win.refresh()
+
+
+def get_channel_row_color(index: int) -> int:
+    if index == ui_state.selected_channel:
+        if ui_state.current_window == 0:
+            return get_color("channel_list", reverse=True)
+        return get_color("channel_selected")
+    return get_color("channel_list")
+
+
+def get_node_row_color(index: int) -> int:
+    node_num = ui_state.node_list[index]
+    node = interface_state.interface.nodesByNum.get(node_num, {})
+    color = "node_list"
+    if node.get("isFavorite"):
+        color = "node_favorite"
+    if node.get("isIgnored"):
+        color = "node_ignored"
+    return get_color(color, reverse=index == ui_state.selected_node and ui_state.current_window == 2)
+
+
+def refresh_main_window(window_id: int, selected: bool) -> None:
+    if window_id == 0:
+        paint_frame(channel_win, selected=selected)
+        if ui_state.channel_list:
+            width = max(0, channel_pad.getmaxyx()[1] - 4)
+            channel_pad.chgat(ui_state.selected_channel, 1, width, get_channel_row_color(ui_state.selected_channel))
+        refresh_pad(0)
+    elif window_id == 1:
+        paint_frame(messages_win, selected=selected)
+        refresh_pad(1)
+    elif window_id == 2:
+        paint_frame(nodes_win, selected=selected)
+        if ui_state.node_list and nodes_pad is not None:
+            width = max(0, nodes_pad.getmaxyx()[1] - 4)
+            nodes_pad.chgat(ui_state.selected_node, 1, width, get_node_row_color(ui_state.selected_node))
+        refresh_pad(2)
+
+
+def get_node_display_name(node_num: int, node: dict) -> str:
+    user = node.get("user") or {}
+    return user.get("longName") or get_name_from_database(node_num, "long")
 
 
 def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
@@ -360,31 +403,16 @@ def handle_leftright(char: int) -> None:
     delta = -1 if char == curses.KEY_LEFT else 1
     old_window = ui_state.current_window
     ui_state.current_window = (ui_state.current_window + delta) % 3
-    handle_resize(root_win, False)
+    if ui_state.single_pane_mode:
+        handle_resize(root_win, False)
+        return
 
-    if old_window == 0:
-        paint_frame(channel_win, selected=False)
-        refresh_pad(0)
-    if old_window == 1:
-        paint_frame(messages_win, selected=False)
-        refresh_pad(1)
-    elif old_window == 2:
-        paint_frame(nodes_win, selected=False)
-        refresh_pad(2)
+    refresh_main_window(old_window, selected=False)
 
     if not ui_state.single_pane_mode:
         draw_window_arrows(old_window)
 
-    if ui_state.current_window == 0:
-        paint_frame(channel_win, selected=True)
-        refresh_pad(0)
-    elif ui_state.current_window == 1:
-        paint_frame(messages_win, selected=True)
-        refresh_pad(1)
-    elif ui_state.current_window == 2:
-        paint_frame(nodes_win, selected=True)
-        refresh_pad(2)
-
+    refresh_main_window(ui_state.current_window, selected=True)
     draw_window_arrows(ui_state.current_window)
 
 
@@ -405,31 +433,16 @@ def handle_function_keys(char: int) -> None:
         return
 
     ui_state.current_window = target
-    handle_resize(root_win, False)
+    if ui_state.single_pane_mode:
+        handle_resize(root_win, False)
+        return
 
-    if old_window == 0:
-        paint_frame(channel_win, selected=False)
-        refresh_pad(0)
-    elif old_window == 1:
-        paint_frame(messages_win, selected=False)
-        refresh_pad(1)
-    elif old_window == 2:
-        paint_frame(nodes_win, selected=False)
-        refresh_pad(2)
+    refresh_main_window(old_window, selected=False)
 
     if not ui_state.single_pane_mode:
         draw_window_arrows(old_window)
 
-    if ui_state.current_window == 0:
-        paint_frame(channel_win, selected=True)
-        refresh_pad(0)
-    elif ui_state.current_window == 1:
-        paint_frame(messages_win, selected=True)
-        refresh_pad(1)
-    elif ui_state.current_window == 2:
-        paint_frame(nodes_win, selected=True)
-        refresh_pad(2)
-
+    refresh_main_window(ui_state.current_window, selected=True)
     draw_window_arrows(ui_state.current_window)
 
 
@@ -908,10 +921,8 @@ def draw_node_list() -> None:
     if ui_state.current_window != 2 and ui_state.single_pane_mode:
         return
 
-    # This didn't work, for some reason an error is thown on startup, so we just create the pad every time
-    # if nodes_pad is None:
-    # nodes_pad = curses.newpad(1, 1)
-    nodes_pad = curses.newpad(1, 1)
+    if nodes_pad is None:
+        nodes_pad = curses.newpad(1, 1)
 
     try:
         nodes_pad.erase()
@@ -925,28 +936,12 @@ def draw_node_list() -> None:
         node = interface_state.interface.nodesByNum[node_num]
         secure = "user" in node and "publicKey" in node["user"] and node["user"]["publicKey"]
         status_icon = "🔐" if secure else "🔓"
-        node_name = get_name_from_database(node_num, "long")
-        user_name = node["user"]["shortName"]
-
-        uptime_str = ""
-        if "deviceMetrics" in node and "uptimeSeconds" in node["deviceMetrics"]:
-            uptime_str = f" / Up: {get_readable_duration(node['deviceMetrics']['uptimeSeconds'])}"
-
-        last_heard_str = f"  ■  {get_time_ago(node['lastHeard'])}" if node.get("lastHeard") else ""
-        hops_str = f"  ■  Hops: {node['hopsAway']}" if "hopsAway" in node else ""
-        snr_str = f"  ■  SNR: {node['snr']}dB" if node.get("hopsAway") == 0 and "snr" in node else ""
+        node_name = get_node_display_name(node_num, node)
 
         # Future node name custom formatting possible
         node_str = f"{status_icon} {node_name}"
         node_str = node_str.ljust(box_width - 4)[: box_width - 2]
-        color = "node_list"
-        if "isFavorite" in node and node["isFavorite"]:
-            color = "node_favorite"
-        if "isIgnored" in node and node["isIgnored"]:
-            color = "node_ignored"
-        nodes_pad.addstr(
-            i, 1, node_str, get_color(color, reverse=ui_state.selected_node == i and ui_state.current_window == 2)
-        )
+        nodes_pad.addstr(i, 1, node_str, get_node_row_color(i))
 
     paint_frame(nodes_win, selected=(ui_state.current_window == 2))
     nodes_win.refresh()
