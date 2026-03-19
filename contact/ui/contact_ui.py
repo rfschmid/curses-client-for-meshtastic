@@ -73,7 +73,7 @@ def get_channel_row_color(index: int) -> int:
     return get_color("channel_list")
 
 
-def get_node_row_color(index: int) -> int:
+def get_node_row_color(index: int, highlight: bool = False) -> int:
     node_num = ui_state.node_list[index]
     node = interface_state.interface.nodesByNum.get(node_num, {})
     color = "node_list"
@@ -81,7 +81,31 @@ def get_node_row_color(index: int) -> int:
         color = "node_favorite"
     if node.get("isIgnored"):
         color = "node_ignored"
-    return get_color(color, reverse=index == ui_state.selected_node and ui_state.current_window == 2)
+    reverse = index == ui_state.selected_node and (ui_state.current_window == 2 or highlight)
+    return get_color(color, reverse=reverse)
+
+
+def refresh_node_selection(old_index: int = -1, highlight: bool = False) -> None:
+    if nodes_pad is None or not ui_state.node_list:
+        return
+
+    width = max(0, nodes_pad.getmaxyx()[1] - 4)
+
+    if 0 <= old_index < len(ui_state.node_list):
+        try:
+            nodes_pad.chgat(old_index, 1, width, get_node_row_color(old_index, highlight=highlight))
+        except curses.error:
+            pass
+
+    if 0 <= ui_state.selected_node < len(ui_state.node_list):
+        try:
+            nodes_pad.chgat(ui_state.selected_node, 1, width, get_node_row_color(ui_state.selected_node, highlight=highlight))
+        except curses.error:
+            pass
+
+    ui_state.start_index[2] = max(0, ui_state.selected_node - (nodes_win.getmaxyx()[0] - 3))
+    refresh_pad(2)
+    draw_window_arrows(2)
 
 
 def refresh_main_window(window_id: int, selected: bool) -> None:
@@ -494,34 +518,34 @@ def handle_enter(input_text: str) -> str:
 
 
 def handle_f5_key(stdscr: curses.window) -> None:
-    node = None
-    try:
-        node = interface_state.interface.nodesByNum[ui_state.node_list[ui_state.selected_node]]
+    if not ui_state.node_list:
+        return
 
+    def build_node_details() -> tuple[str, list[str]]:
+        node = interface_state.interface.nodesByNum[ui_state.node_list[ui_state.selected_node]]
         message_parts = []
 
         message_parts.append("**📋 Basic Information:**")
         message_parts.append(f"• Device: {node.get('user', {}).get('longName', 'Unknown')}")
         message_parts.append(f"• Short name: {node.get('user', {}).get('shortName', 'Unknown')}")
         message_parts.append(f"• Hardware: {node.get('user', {}).get('hwModel', 'Unknown')}")
-
-        role = f"{node.get('user', {}).get('role', 'Unknown')}"
-        message_parts.append(f"• Role: {role}")
-
-        pk = f"{node.get('user', {}).get('publicKey')}"
-        message_parts.append(f"Public key: {pk}")
-
+        message_parts.append(f"• Role: {node.get('user', {}).get('role', 'Unknown')}")
+        message_parts.append(f"Public key: {node.get('user', {}).get('publicKey')}")
         message_parts.append(f"• Node ID: {node.get('num', 'Unknown')}")
+
         if "position" in node:
             pos = node["position"]
-            if pos.get("latitude") and pos.get("longitude"):
+            has_coords = pos.get("latitude") and pos.get("longitude")
+            if has_coords:
                 message_parts.append(f"• Position: {pos['latitude']:.4f}, {pos['longitude']:.4f}")
             if pos.get("altitude"):
                 message_parts.append(f"• Altitude: {pos['altitude']}m")
-            message_parts.append(f"https://maps.google.com/?q={pos['latitude']:.4f},{pos['longitude']:.4f}")
+            if has_coords:
+                message_parts.append(f"https://maps.google.com/?q={pos['latitude']:.4f},{pos['longitude']:.4f}")
 
         if any(key in node for key in ["snr", "hopsAway", "lastHeard"]):
-            message_parts.append("\n**🌐 Network Metrics:**")
+            message_parts.append("")
+            message_parts.append("**🌐 Network Metrics:**")
 
             if "snr" in node:
                 snr = node["snr"]
@@ -541,12 +565,13 @@ def handle_f5_key(stdscr: curses.window) -> None:
                 hop_emoji = "📡" if hops == 0 else "🔄" if hops == 1 else "⏩"
                 message_parts.append(f"• Hops away: {hop_emoji} {hops}")
 
-            if "lastHeard" in node and node["lastHeard"]:
+            if node.get("lastHeard"):
                 message_parts.append(f"• Last heard: 🕐 {get_time_ago(node['lastHeard'])}")
 
         if node.get("deviceMetrics"):
             metrics = node["deviceMetrics"]
-            message_parts.append("\n**📊 Device Metrics:**")
+            message_parts.append("")
+            message_parts.append("**📊 Device Metrics:**")
 
             if "batteryLevel" in metrics:
                 battery = metrics["batteryLevel"]
@@ -567,21 +592,128 @@ def handle_f5_key(stdscr: curses.window) -> None:
                 air_emoji = "🔴" if air_util > 80 else "🟡" if air_util > 50 else "🟢"
                 message_parts.append(f"• Air utilization TX: {air_emoji} {air_util:.2f}%")
 
-        message = "\n".join(message_parts)
-
-        contact.ui.dialog.dialog(
-            t(
-                "ui.dialog.node_details_title",
-                default="📡 Node Details: {name}",
-                name=node.get("user", {}).get("shortName", "Unknown"),
-            ),
-            message,
+        title = t(
+            "ui.dialog.node_details_title",
+            default="📡 Node Details: {name}",
+            name=node.get("user", {}).get("shortName", "Unknown"),
         )
-        curses.curs_set(1)  # Show cursor again
-        handle_resize(stdscr, False)
+        return title, message_parts
+
+    previous_window = ui_state.current_window
+    ui_state.current_window = 4
+    scroll_offset = 0
+    dialog_win = None
+
+    curses.curs_set(0)
+    refresh_node_selection(highlight=True)
+
+    try:
+        while True:
+            curses.update_lines_cols()
+            height, width = curses.LINES, curses.COLS
+            title, message_lines = build_node_details()
+
+            max_line_length = max(len(title), *(len(line) for line in message_lines))
+            dialog_width = min(max(max_line_length + 4, 20), max(10, width - 2))
+            dialog_height = min(max(len(message_lines) + 4, 6), max(6, height - 2))
+            x = max(0, (width - dialog_width) // 2)
+            y = max(0, (height - dialog_height) // 2)
+            viewport_h = max(1, dialog_height - 4)
+            max_scroll = max(0, len(message_lines) - viewport_h)
+            scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+            if dialog_win is None:
+                dialog_win = curses.newwin(dialog_height, dialog_width, y, x)
+            else:
+                dialog_win.erase()
+                dialog_win.refresh()
+                dialog_win.resize(dialog_height, dialog_width)
+                dialog_win.mvwin(y, x)
+
+            dialog_win.keypad(True)
+            dialog_win.bkgd(get_color("background"))
+            dialog_win.attrset(get_color("window_frame"))
+            dialog_win.border(0)
+
+            try:
+                dialog_win.addstr(0, 2, title[: max(0, dialog_width - 4)], get_color("settings_default"))
+                hint = f" {ui_state.selected_node + 1}/{len(ui_state.node_list)} "
+                dialog_win.addstr(0, max(2, dialog_width - len(hint) - 2), hint, get_color("commands"))
+            except curses.error:
+                pass
+
+            msg_win = dialog_win.derwin(viewport_h + 2, dialog_width - 2, 1, 1)
+            msg_win.erase()
+
+            for row, line in enumerate(message_lines[scroll_offset : scroll_offset + viewport_h], start=1):
+                trimmed = line[: max(0, dialog_width - 6)]
+                try:
+                    msg_win.addstr(row, 1, trimmed, get_color("settings_default"))
+                except curses.error:
+                    pass
+
+            if len(message_lines) > viewport_h:
+                old_index = ui_state.start_index[4] if len(ui_state.start_index) > 4 else 0
+                while len(ui_state.start_index) <= 4:
+                    ui_state.start_index.append(0)
+                ui_state.start_index[4] = scroll_offset
+                draw_main_arrows(msg_win, len(message_lines) - 1, window=4)
+                ui_state.start_index[4] = old_index
+
+            try:
+                ok_text = " Up/Down: Nodes  PgUp/PgDn: Scroll  Esc: Close "
+                dialog_win.addstr(
+                    dialog_height - 2,
+                    max(1, (dialog_width - len(ok_text)) // 2),
+                    ok_text[: max(0, dialog_width - 2)],
+                    get_color("settings_default", reverse=True),
+                )
+            except curses.error:
+                pass
+
+            dialog_win.refresh()
+            msg_win.noutrefresh()
+            curses.doupdate()
+
+            dialog_win.timeout(200)
+            char = dialog_win.getch()
+
+            if menu_state.need_redraw:
+                menu_state.need_redraw = False
+                continue
+
+            if char in (27, curses.KEY_LEFT, curses.KEY_ENTER, 10, 13, 32):
+                break
+            if char == curses.KEY_UP:
+                old_selected_node = ui_state.selected_node
+                ui_state.selected_node = (ui_state.selected_node - 1) % len(ui_state.node_list)
+                scroll_offset = 0
+                refresh_node_selection(old_selected_node, highlight=True)
+            elif char == curses.KEY_DOWN:
+                old_selected_node = ui_state.selected_node
+                ui_state.selected_node = (ui_state.selected_node + 1) % len(ui_state.node_list)
+                scroll_offset = 0
+                refresh_node_selection(old_selected_node, highlight=True)
+            elif char == curses.KEY_PPAGE:
+                scroll_offset = max(0, scroll_offset - viewport_h)
+            elif char == curses.KEY_NPAGE:
+                scroll_offset = min(max_scroll, scroll_offset + viewport_h)
+            elif char == curses.KEY_HOME:
+                scroll_offset = 0
+            elif char == curses.KEY_END:
+                scroll_offset = max_scroll
+            elif char == curses.KEY_RESIZE:
+                continue
 
     except KeyError:
         return
+    finally:
+        if dialog_win is not None:
+            dialog_win.erase()
+            dialog_win.refresh()
+        ui_state.current_window = previous_window
+        curses.curs_set(1)
+        handle_resize(stdscr, False)
 
 
 def handle_ctrl_t(stdscr: curses.window) -> None:
