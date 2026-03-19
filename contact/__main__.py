@@ -32,6 +32,7 @@ from contact.ui.contact_ui import main_ui
 from contact.ui.splash import draw_splash
 from contact.utilities.arg_parser import setup_parser
 from contact.utilities.db_handler import init_nodedb, load_messages_from_db
+from contact.utilities.demo_data import build_demo_interface, configure_demo_database, seed_demo_messages
 from contact.utilities.input_handlers import get_list_input
 from contact.utilities.i18n import t
 from contact.ui.dialog import dialog
@@ -68,9 +69,18 @@ def prompt_region_if_unset(args: object) -> None:
         interface_state.interface = initialize_interface(args)
 
 
-def initialize_globals() -> None:
+def initialize_globals(seed_demo: bool = False) -> None:
     """Initializes interface and shared globals."""
 
+    ui_state.channel_list = []
+    ui_state.all_messages = {}
+    ui_state.notifications = []
+    ui_state.packet_buffer = []
+    ui_state.node_list = []
+    ui_state.selected_channel = 0
+    ui_state.selected_message = 0
+    ui_state.selected_node = 0
+    ui_state.start_index = [0, 0, 0]
     interface_state.myNodeNum = get_nodeNum()
     ui_state.channel_list = get_channels()
     ui_state.node_list = get_node_list()
@@ -78,7 +88,16 @@ def initialize_globals() -> None:
     pub.subscribe(on_receive, "meshtastic.receive")
 
     init_nodedb()
+    if seed_demo:
+        seed_demo_messages()
     load_messages_from_db()
+
+
+def initialize_runtime_interface(args: object):
+    if getattr(args, "demo_screenshot", False):
+        configure_demo_database()
+        return build_demo_interface()
+    return initialize_interface(args)
 
 
 def main(stdscr: curses.window) -> None:
@@ -98,12 +117,12 @@ def main(stdscr: curses.window) -> None:
 
         logging.info("Initializing interface...")
         with app_state.lock:
-            interface_state.interface = initialize_interface(args)
+            interface_state.interface = initialize_runtime_interface(args)
 
-            if interface_state.interface.localNode.localConfig.lora.region == 0:
+            if not getattr(args, "demo_screenshot", False) and interface_state.interface.localNode.localConfig.lora.region == 0:
                 prompt_region_if_unset(args)
 
-            initialize_globals()
+            initialize_globals(seed_demo=getattr(args, "demo_screenshot", False))
             logging.info("Starting main UI")
 
             stdscr.clear()
