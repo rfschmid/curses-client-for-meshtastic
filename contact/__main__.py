@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import traceback
+from typing import Optional
 
 # Third-party
 from pubsub import pub
@@ -36,7 +37,7 @@ from contact.utilities.demo_data import build_demo_interface, configure_demo_dat
 from contact.utilities.input_handlers import get_list_input
 from contact.utilities.i18n import t
 from contact.ui.dialog import dialog
-from contact.utilities.interfaces import initialize_interface
+from contact.utilities.interfaces import initialize_interface, reconnect_interface
 from contact.utilities.utils import get_channels, get_nodeNum, get_node_list
 from contact.utilities.singleton import ui_state, interface_state, app_state
 
@@ -60,13 +61,48 @@ app_state.lock = threading.Lock()
 # ------------------------------------------------------------------------------
 # Main Program Logic
 # ------------------------------------------------------------------------------
-def prompt_region_if_unset(args: object) -> None:
+def prompt_region_if_unset(args: object, stdscr: Optional[curses.window] = None) -> None:
     """Prompt user to set region if it is unset."""
     confirmation = get_list_input("Your region is UNSET. Set it now?", "Yes", ["Yes", "No"])
     if confirmation == "Yes":
         set_region(interface_state.interface)
-        interface_state.interface.close()
-        interface_state.interface = initialize_interface(args)
+        close_interface(interface_state.interface)
+        if stdscr is not None:
+            draw_splash(stdscr)
+        interface_state.interface = reconnect_interface(args)
+
+
+def close_interface(interface: object) -> None:
+    if interface is None:
+        return
+    with contextlib.suppress(Exception):
+        interface.close()
+
+
+def interface_is_ready(interface: object) -> bool:
+    try:
+        return getattr(interface, "localNode", None) is not None and interface.localNode.localConfig is not None
+    except Exception:
+        return False
+
+
+def initialize_runtime_interface_with_retry(stdscr: curses.window, args: object):
+    while True:
+        interface = initialize_runtime_interface(args)
+        if getattr(args, "demo_screenshot", False) or interface_is_ready(interface):
+            return interface
+
+        choice = get_list_input(
+            t("ui.prompt.node_not_found", default="No node found. Retry connection?"),
+            "Retry",
+            ["Retry", "Close"],
+            mandatory=True,
+        )
+        close_interface(interface)
+        if choice == "Close":
+            return None
+
+        draw_splash(stdscr)
 
 
 def initialize_globals(seed_demo: bool = False) -> None:
@@ -117,10 +153,12 @@ def main(stdscr: curses.window) -> None:
 
         logging.info("Initializing interface...")
         with app_state.lock:
-            interface_state.interface = initialize_runtime_interface(args)
+            interface_state.interface = initialize_runtime_interface_with_retry(stdscr, args)
+            if interface_state.interface is None:
+                return
 
             if not getattr(args, "demo_screenshot", False) and interface_state.interface.localNode.localConfig.lora.region == 0:
-                prompt_region_if_unset(args)
+                prompt_region_if_unset(args, stdscr)
 
             initialize_globals(seed_demo=getattr(args, "demo_screenshot", False))
             logging.info("Starting main UI")
@@ -169,10 +207,10 @@ def start() -> None:
 
     try:
         curses.wrapper(main)
-        interface_state.interface.close()
+        close_interface(interface_state.interface)
     except KeyboardInterrupt:
         logging.info("User exited with Ctrl+C")
-        interface_state.interface.close()
+        close_interface(interface_state.interface)
         sys.exit(0)
     except Exception as e:
         logging.critical("Fatal error", exc_info=True)

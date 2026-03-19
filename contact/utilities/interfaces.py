@@ -1,4 +1,5 @@
 import logging
+import time
 import meshtastic.serial_interface, meshtastic.tcp_interface, meshtastic.ble_interface
 
 
@@ -41,3 +42,21 @@ def initialize_interface(args):
 
     except Exception as ex:
         logging.critical(f"Fatal error initializing interface: {ex}")
+
+
+def reconnect_interface(args, attempts: int = 15, delay_seconds: float = 1.0):
+    last_error = None
+
+    for attempt in range(attempts):
+        try:
+            interface = initialize_interface(args)
+            if interface is not None:
+                return interface
+            last_error = RuntimeError("initialize_interface returned None")
+        except Exception as ex:
+            last_error = ex
+
+        if attempt < attempts - 1:
+            time.sleep(delay_seconds)
+
+    raise RuntimeError("Failed to reconnect to the Meshtastic node") from last_error

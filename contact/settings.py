@@ -14,7 +14,7 @@ from contact.ui.colors import setup_colors
 from contact.ui.splash import draw_splash
 from contact.ui.control_ui import set_region, settings_menu
 from contact.utilities.arg_parser import setup_parser
-from contact.utilities.interfaces import initialize_interface
+from contact.utilities.interfaces import initialize_interface, reconnect_interface
 
 
 def main(stdscr: curses.window) -> None:
@@ -40,7 +40,8 @@ def main(stdscr: curses.window) -> None:
                 if confirmation == "Yes":
                     set_region(interface)
                     interface.close()
-                    interface = initialize_interface(args)
+                    draw_splash(stdscr)
+                    interface = reconnect_interface(args)
             stdscr.clear()
             stdscr.refresh()
             settings_menu(stdscr, interface)

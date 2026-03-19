@@ -1,4 +1,5 @@
 from argparse import Namespace
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -40,20 +41,58 @@ class MainRuntimeTests(unittest.TestCase):
         self.assertEqual(result, "live-interface")
         initialize_interface.assert_called_once_with(args)
 
+    def test_interface_is_ready_detects_missing_local_node(self) -> None:
+        self.assertFalse(entrypoint.interface_is_ready(object()))
+        self.assertTrue(entrypoint.interface_is_ready(SimpleNamespace(localNode=SimpleNamespace(localConfig=mock.Mock()))))
+
+    def test_initialize_runtime_interface_with_retry_retries_until_node_is_ready(self) -> None:
+        args = Namespace(demo_screenshot=False)
+        stdscr = mock.Mock()
+        bad_interface = mock.Mock(spec=["close"])
+        good_interface = SimpleNamespace(localNode=SimpleNamespace(localConfig=mock.Mock()))
+
+        with mock.patch.object(entrypoint, "initialize_runtime_interface", side_effect=[bad_interface, good_interface]):
+            with mock.patch.object(entrypoint, "get_list_input", return_value="Retry") as get_list_input:
+                with mock.patch.object(entrypoint, "draw_splash") as draw_splash:
+                    result = entrypoint.initialize_runtime_interface_with_retry(stdscr, args)
+
+        self.assertIs(result, good_interface)
+        get_list_input.assert_called_once()
+        bad_interface.close.assert_called_once_with()
+        draw_splash.assert_called_once_with(stdscr)
+
+    def test_initialize_runtime_interface_with_retry_returns_none_when_user_closes(self) -> None:
+        args = Namespace(demo_screenshot=False)
+        stdscr = mock.Mock()
+        bad_interface = mock.Mock(spec=["close"])
+
+        with mock.patch.object(entrypoint, "initialize_runtime_interface", return_value=bad_interface):
+            with mock.patch.object(entrypoint, "get_list_input", return_value="Close") as get_list_input:
+                with mock.patch.object(entrypoint, "draw_splash") as draw_splash:
+                    result = entrypoint.initialize_runtime_interface_with_retry(stdscr, args)
+
+        self.assertIsNone(result)
+        get_list_input.assert_called_once()
+        bad_interface.close.assert_called_once_with()
+        draw_splash.assert_not_called()
+
     def test_prompt_region_if_unset_reinitializes_interface_after_confirmation(self) -> None:
         args = Namespace()
         old_interface = mock.Mock()
         new_interface = mock.Mock()
+        stdscr = mock.Mock()
         interface_state.interface = old_interface
 
         with mock.patch.object(entrypoint, "get_list_input", return_value="Yes"):
             with mock.patch.object(entrypoint, "set_region") as set_region:
-                with mock.patch.object(entrypoint, "initialize_interface", return_value=new_interface) as initialize:
-                    entrypoint.prompt_region_if_unset(args)
+                with mock.patch.object(entrypoint, "draw_splash") as draw_splash:
+                    with mock.patch.object(entrypoint, "reconnect_interface", return_value=new_interface) as reconnect:
+                        entrypoint.prompt_region_if_unset(args, stdscr)
 
         set_region.assert_called_once_with(old_interface)
         old_interface.close.assert_called_once_with()
-        initialize.assert_called_once_with(args)
+        draw_splash.assert_called_once_with(stdscr)
+        reconnect.assert_called_once_with(args)
         self.assertIs(interface_state.interface, new_interface)
 
     def test_prompt_region_if_unset_leaves_interface_unchanged_when_declined(self) -> None:
@@ -63,11 +102,11 @@ class MainRuntimeTests(unittest.TestCase):
 
         with mock.patch.object(entrypoint, "get_list_input", return_value="No"):
             with mock.patch.object(entrypoint, "set_region") as set_region:
-                with mock.patch.object(entrypoint, "initialize_interface") as initialize:
+                with mock.patch.object(entrypoint, "reconnect_interface") as reconnect:
                     entrypoint.prompt_region_if_unset(args)
 
         set_region.assert_not_called()
-        initialize.assert_not_called()
+        reconnect.assert_not_called()
         interface.close.assert_not_called()
         self.assertIs(interface_state.interface, interface)
 
@@ -146,6 +185,21 @@ class MainRuntimeTests(unittest.TestCase):
 
         wrapper.assert_called_once_with(entrypoint.main)
         interface.close.assert_called_once_with()
+
+    def test_main_returns_cleanly_when_user_closes_missing_node_dialog(self) -> None:
+        stdscr = mock.Mock()
+        args = Namespace(settings=False, demo_screenshot=False)
+
+        with mock.patch.object(entrypoint, "setup_colors"):
+            with mock.patch.object(entrypoint, "ensure_min_rows"):
+                with mock.patch.object(entrypoint, "draw_splash"):
+                    with mock.patch.object(entrypoint, "setup_parser") as setup_parser:
+                        with mock.patch.object(entrypoint, "initialize_runtime_interface_with_retry", return_value=None):
+                            with mock.patch.object(entrypoint, "initialize_globals") as initialize_globals:
+                                setup_parser.return_value.parse_args.return_value = args
+                                entrypoint.main(stdscr)
+
+        initialize_globals.assert_not_called()
 
     def test_start_handles_keyboard_interrupt(self) -> None:
         interface = mock.Mock()
