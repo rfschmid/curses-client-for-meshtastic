@@ -12,6 +12,7 @@ from contact.ui.colors import get_color
 from contact.utilities.db_handler import get_name_from_database, update_node_info_in_db, is_chat_archived
 from contact.utilities.input_handlers import get_list_input
 from contact.utilities.i18n import t
+from contact.utilities.emoji_utils import normalize_message_text
 import contact.ui.default_config as config
 import contact.ui.dialog
 from contact.ui.nav_utils import move_main_highlight, draw_main_arrows, get_msg_window_lines, wrap_text
@@ -865,7 +866,7 @@ def draw_messages_window(scroll_to_bottom: bool = False) -> None:
 
         row = 0
         for prefix, message in messages:
-            full_message = f"{prefix}{message}"
+            full_message = normalize_message_text(f"{prefix}{message}")
             wrapped_lines = wrap_text(full_message, messages_win.getmaxyx()[1] - 2)
             msg_line_count += len(wrapped_lines)
             messages_pad.resize(msg_line_count, messages_win.getmaxyx()[1])
