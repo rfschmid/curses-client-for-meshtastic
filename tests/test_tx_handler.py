@@ -81,11 +81,11 @@ class TxHandlerTests(unittest.TestCase):
 
         with mock.patch.object(tx_handler, "update_ack_nak") as update_ack_nak:
             with mock.patch("contact.message_handlers.tx_handler.time.strftime", return_value="[01:02:03] "):
-                with mock.patch("contact.ui.contact_ui.draw_messages_window") as draw_messages_window:
+                with mock.patch("contact.ui.contact_ui.request_ui_redraw") as request_ui_redraw:
                     tx_handler.onAckNak(packet)
 
         update_ack_nak.assert_called_once_with("Primary", 55, "hello", "Ack")
-        draw_messages_window.assert_called_once_with()
+        request_ui_redraw.assert_called_once_with(messages=True)
         self.assertIn(config.sent_message_prefix, ui_state.all_messages["Primary"][0][0])
         self.assertIn(config.ack_str, ui_state.all_messages["Primary"][0][0])
 
@@ -100,7 +100,7 @@ class TxHandlerTests(unittest.TestCase):
 
         with mock.patch.object(tx_handler, "update_ack_nak") as update_ack_nak:
             with mock.patch("contact.message_handlers.tx_handler.time.strftime", return_value="[01:02:03] "):
-                with mock.patch("contact.ui.contact_ui.draw_messages_window"):
+                with mock.patch("contact.ui.contact_ui.request_ui_redraw"):
                     tx_handler.onAckNak(packet)
 
         update_ack_nak.assert_called_once_with("Primary", 55, "hello", "Implicit")

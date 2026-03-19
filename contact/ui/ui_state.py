@@ -33,6 +33,12 @@ class ChatUIState:
     show_save_option: bool = False
     menu_path: List[str] = field(default_factory=list)
     single_pane_mode: bool = False
+    redraw_channels: bool = False
+    redraw_messages: bool = False
+    redraw_nodes: bool = False
+    redraw_packetlog: bool = False
+    redraw_full_ui: bool = False
+    scroll_messages_to_bottom: bool = False
 
 
 @dataclass

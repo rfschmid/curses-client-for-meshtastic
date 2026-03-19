@@ -15,14 +15,68 @@ from contact.utilities.i18n import t
 from contact.utilities.emoji_utils import normalize_message_text
 import contact.ui.default_config as config
 import contact.ui.dialog
-from contact.ui.nav_utils import move_main_highlight, draw_main_arrows, get_msg_window_lines, wrap_text
-from contact.utilities.singleton import ui_state, interface_state, menu_state
+from contact.ui.nav_utils import (
+    move_main_highlight,
+    draw_main_arrows,
+    get_msg_window_lines,
+    wrap_text,
+    truncate_with_ellipsis,
+    pad_to_width,
+)
+from contact.utilities.singleton import ui_state, interface_state, menu_state, app_state
 
 
 MIN_COL = 1  # "effectively zero" without breaking curses
 RESIZE_DEBOUNCE_MS = 250
 root_win = None
 nodes_pad = None
+
+
+def request_ui_redraw(
+    *,
+    channels: bool = False,
+    messages: bool = False,
+    nodes: bool = False,
+    packetlog: bool = False,
+    full: bool = False,
+    scroll_messages_to_bottom: bool = False,
+) -> None:
+    ui_state.redraw_channels = ui_state.redraw_channels or channels
+    ui_state.redraw_messages = ui_state.redraw_messages or messages
+    ui_state.redraw_nodes = ui_state.redraw_nodes or nodes
+    ui_state.redraw_packetlog = ui_state.redraw_packetlog or packetlog
+    ui_state.redraw_full_ui = ui_state.redraw_full_ui or full
+    ui_state.scroll_messages_to_bottom = ui_state.scroll_messages_to_bottom or scroll_messages_to_bottom
+
+
+def process_pending_ui_updates(stdscr: curses.window) -> None:
+    if ui_state.redraw_full_ui:
+        ui_state.redraw_full_ui = False
+        ui_state.redraw_channels = False
+        ui_state.redraw_messages = False
+        ui_state.redraw_nodes = False
+        ui_state.redraw_packetlog = False
+        ui_state.scroll_messages_to_bottom = False
+        handle_resize(stdscr, False)
+        return
+
+    if ui_state.redraw_channels:
+        ui_state.redraw_channels = False
+        draw_channel_list()
+
+    if ui_state.redraw_nodes:
+        ui_state.redraw_nodes = False
+        draw_node_list()
+
+    if ui_state.redraw_messages:
+        scroll_to_bottom = ui_state.scroll_messages_to_bottom
+        ui_state.redraw_messages = False
+        ui_state.scroll_messages_to_bottom = False
+        draw_messages_window(scroll_to_bottom)
+
+    if ui_state.redraw_packetlog:
+        ui_state.redraw_packetlog = False
+        draw_packetlog_win()
 
 
 # Draw arrows for a specific window id (0=channel,1=messages,2=nodes).
@@ -89,7 +143,7 @@ def refresh_node_selection(old_index: int = -1, highlight: bool = False) -> None
     if nodes_pad is None or not ui_state.node_list:
         return
 
-    width = max(0, nodes_pad.getmaxyx()[1] - 4)
+    width = max(0, nodes_pad.getmaxyx()[1] - 2)
 
     if 0 <= old_index < len(ui_state.node_list):
         try:
@@ -121,7 +175,7 @@ def refresh_main_window(window_id: int, selected: bool) -> None:
     elif window_id == 2:
         paint_frame(nodes_win, selected=selected)
         if ui_state.node_list and nodes_pad is not None:
-            width = max(0, nodes_pad.getmaxyx()[1] - 4)
+            width = max(0, nodes_pad.getmaxyx()[1] - 2)
             nodes_pad.chgat(ui_state.selected_node, 1, width, get_node_row_color(ui_state.selected_node))
         refresh_pad(2)
 
@@ -216,6 +270,7 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         win.refresh()
 
     entry_win.keypad(True)
+    entry_win.timeout(200)
     curses.curs_set(1)
 
     try:
@@ -261,14 +316,19 @@ def main_ui(stdscr: curses.window) -> None:
     handle_resize(stdscr, True)
 
     while True:
+        with app_state.lock:
+            process_pending_ui_updates(stdscr)
         draw_text_field(entry_win, f"Message: {(input_text or '')[-(stdscr.getmaxyx()[1] - 10):]}", get_color("input"))
 
         # Get user input from entry window
-        if queued_char is None:
-            char = entry_win.get_wch()
-        else:
-            char = queued_char
-            queued_char = None
+        try:
+            if queued_char is None:
+                char = entry_win.get_wch()
+            else:
+                char = queued_char
+                queued_char = None
+        except curses.error:
+            continue
 
         # draw_debug(f"Keypress: {char}")
 
@@ -961,7 +1021,7 @@ def draw_channel_list() -> None:
     channel_pad.erase()
     win_width = channel_win.getmaxyx()[1]
 
-    channel_pad.resize(len(ui_state.all_messages), channel_win.getmaxyx()[1])
+    channel_pad.resize(max(1, len(ui_state.channel_list)), channel_win.getmaxyx()[1])
 
     idx = 0
     for channel in ui_state.channel_list:
@@ -978,9 +1038,7 @@ def draw_channel_list() -> None:
         notification = " " + config.notification_symbol if idx in ui_state.notifications else ""
 
         # Truncate the channel name if it's too long to fit in the window
-        truncated_channel = (
-            (channel[: win_width - 5] + "-" if len(channel) > win_width - 5 else channel) + notification
-        ).ljust(win_width - 3)
+        truncated_channel = truncate_with_ellipsis(f"{channel}{notification}", win_width - 3)
 
         color = get_color("channel_list")
         if idx == ui_state.selected_channel:
@@ -1075,8 +1133,7 @@ def draw_node_list() -> None:
         node_name = get_node_display_name(node_num, node)
 
         # Future node name custom formatting possible
-        node_str = f"{status_icon} {node_name}"
-        node_str = node_str.ljust(box_width - 4)[: box_width - 2]
+        node_str = pad_to_width(f"{status_icon} {node_name}", box_width - 2)
         nodes_pad.addstr(i, 1, node_str, get_node_row_color(i))
 
     paint_frame(nodes_win, selected=(ui_state.current_window == 2))
@@ -1298,8 +1355,7 @@ def refresh_pad(window: int) -> None:
         pad = messages_pad
         box = messages_win
         lines = get_msg_window_lines(messages_win, packetlog_win)
-        selected_item = ui_state.selected_message
-        start_index = ui_state.selected_message
+        start_index = ui_state.start_index[1]
 
         if ui_state.display_log:
             packetlog_win.box()

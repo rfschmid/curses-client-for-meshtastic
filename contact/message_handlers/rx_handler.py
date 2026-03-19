@@ -48,11 +48,8 @@ from contact.utilities.utils import (
     add_new_message,
 )
 from contact.ui.contact_ui import (
-    draw_packetlog_win,
-    draw_node_list,
-    draw_messages_window,
-    draw_channel_list,
     add_notification,
+    request_ui_redraw,
 )
 from contact.utilities.db_handler import (
     save_message_to_db,
@@ -121,7 +118,7 @@ def on_receive(packet: Dict[str, Any], interface: Any) -> None:
             ui_state.packet_buffer = ui_state.packet_buffer[-20:]
 
         if ui_state.display_log:
-            draw_packetlog_win()
+            request_ui_redraw(packetlog=True)
 
             if ui_state.current_window == 4:
                 menu_state.need_redraw = True
@@ -132,7 +129,7 @@ def on_receive(packet: Dict[str, Any], interface: Any) -> None:
             # Assume any incoming packet could update the last seen time for a node
             changed = refresh_node_list()
             if changed:
-                draw_node_list()
+                request_ui_redraw(nodes=True)
 
             if packet["decoded"]["portnum"] == "NODEINFO_APP":
                 if "user" in packet["decoded"] and "longName" in packet["decoded"]["user"]:
@@ -186,9 +183,9 @@ def on_receive(packet: Dict[str, Any], interface: Any) -> None:
                 add_new_message(channel_id, f"{config.message_prefix} [{hops}] {message_from_string} ", message_string)
 
                 if refresh_channels:
-                    draw_channel_list()
+                    request_ui_redraw(channels=True)
                 if refresh_messages:
-                    draw_messages_window(True)
+                    request_ui_redraw(messages=True, scroll_messages_to_bottom=True)
 
                 save_message_to_db(channel_id, message_from_id, message_string)
 

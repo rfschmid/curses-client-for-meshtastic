@@ -15,7 +15,7 @@ from contact.utilities.db_handler import (
 )
 import contact.ui.default_config as config
 
-from contact.utilities.singleton import ui_state, interface_state
+from contact.utilities.singleton import ui_state, interface_state, app_state
 
 from contact.utilities.utils import add_new_message
 
@@ -28,145 +28,141 @@ def onAckNak(packet: Dict[str, Any]) -> None:
     """
     Handles incoming ACK/NAK response packets.
     """
-    from contact.ui.contact_ui import draw_messages_window
+    from contact.ui.contact_ui import request_ui_redraw
 
-    request = packet["decoded"]["requestId"]
-    if request not in ack_naks:
-        return
+    with app_state.lock:
+        request = packet["decoded"]["requestId"]
+        if request not in ack_naks:
+            return
 
-    acknak = ack_naks.pop(request)
-    message = ui_state.all_messages[acknak["channel"]][acknak["messageIndex"]][1]
+        acknak = ack_naks.pop(request)
+        message = ui_state.all_messages[acknak["channel"]][acknak["messageIndex"]][1]
 
-    confirm_string = " "
-    ack_type = None
-    if packet["decoded"]["routing"]["errorReason"] == "NONE":
-        if packet["from"] == interface_state.myNodeNum:  # Ack "from" ourself means implicit ACK
-            confirm_string = config.ack_implicit_str
-            ack_type = "Implicit"
+        confirm_string = " "
+        ack_type = None
+        if packet["decoded"]["routing"]["errorReason"] == "NONE":
+            if packet["from"] == interface_state.myNodeNum:  # Ack "from" ourself means implicit ACK
+                confirm_string = config.ack_implicit_str
+                ack_type = "Implicit"
+            else:
+                confirm_string = config.ack_str
+                ack_type = "Ack"
         else:
-            confirm_string = config.ack_str
-            ack_type = "Ack"
-    else:
-        confirm_string = config.nak_str
-        ack_type = "Nak"
+            confirm_string = config.nak_str
+            ack_type = "Nak"
 
-    ui_state.all_messages[acknak["channel"]][acknak["messageIndex"]] = (
-        time.strftime("[%H:%M:%S] ") + config.sent_message_prefix + confirm_string + ": ",
-        message,
-    )
+        ui_state.all_messages[acknak["channel"]][acknak["messageIndex"]] = (
+            time.strftime("[%H:%M:%S] ") + config.sent_message_prefix + confirm_string + ": ",
+            message,
+        )
 
-    update_ack_nak(acknak["channel"], acknak["timestamp"], message, ack_type)
+        update_ack_nak(acknak["channel"], acknak["timestamp"], message, ack_type)
 
-    channel_number = ui_state.channel_list.index(acknak["channel"])
-    if ui_state.channel_list[channel_number] == ui_state.channel_list[ui_state.selected_channel]:
-        draw_messages_window()
+        channel_number = ui_state.channel_list.index(acknak["channel"])
+        if ui_state.channel_list[channel_number] == ui_state.channel_list[ui_state.selected_channel]:
+            request_ui_redraw(messages=True)
 
 
 def on_response_traceroute(packet: Dict[str, Any]) -> None:
     """
     Handle traceroute response packets and render the route visually in the UI.
     """
-    from contact.ui.contact_ui import draw_channel_list, draw_messages_window, add_notification
+    from contact.ui.contact_ui import add_notification, request_ui_redraw
 
-    refresh_channels = False
-    refresh_messages = False
+    with app_state.lock:
+        refresh_channels = False
+        refresh_messages = False
 
-    UNK_SNR = -128  # Value representing unknown SNR
+        UNK_SNR = -128  # Value representing unknown SNR
 
-    route_discovery = mesh_pb2.RouteDiscovery()
-    route_discovery.ParseFromString(packet["decoded"]["payload"])
-    msg_dict = google.protobuf.json_format.MessageToDict(route_discovery)
+        route_discovery = mesh_pb2.RouteDiscovery()
+        route_discovery.ParseFromString(packet["decoded"]["payload"])
+        msg_dict = google.protobuf.json_format.MessageToDict(route_discovery)
 
-    msg_str = "Traceroute to:\n"
+        msg_str = "Traceroute to:\n"
 
-    route_str = (
-        get_name_from_database(packet["to"], "short") or f"{packet['to']:08x}"
-    )  # Start with destination of response
-
-    # SNR list should have one more entry than the route, as the final destination adds its SNR also
-    lenTowards = 0 if "route" not in msg_dict else len(msg_dict["route"])
-    snrTowardsValid = "snrTowards" in msg_dict and len(msg_dict["snrTowards"]) == lenTowards + 1
-    if lenTowards > 0:  # Loop through hops in route and add SNR if available
-        for idx, node_num in enumerate(msg_dict["route"]):
-            route_str += (
-                " --> "
-                + (get_name_from_database(node_num, "short") or f"{node_num:08x}")
-                + " ("
-                + (
-                    str(msg_dict["snrTowards"][idx] / 4)
-                    if snrTowardsValid and msg_dict["snrTowards"][idx] != UNK_SNR
-                    else "?"
-                )
-                + "dB)"
-            )
-
-    # End with origin of response
-    route_str += (
-        " --> "
-        + (get_name_from_database(packet["from"], "short") or f"{packet['from']:08x}")
-        + " ("
-        + (str(msg_dict["snrTowards"][-1] / 4) if snrTowardsValid and msg_dict["snrTowards"][-1] != UNK_SNR else "?")
-        + "dB)"
-    )
-
-    msg_str += route_str + "\n"  # Print the route towards destination
-
-    # Only if hopStart is set and there is an SNR entry (for the origin) it's valid, even though route might be empty (direct connection)
-    lenBack = 0 if "routeBack" not in msg_dict else len(msg_dict["routeBack"])
-    backValid = "hopStart" in packet and "snrBack" in msg_dict and len(msg_dict["snrBack"]) == lenBack + 1
-    if backValid:
-        msg_str += "Back:\n"
         route_str = (
-            get_name_from_database(packet["from"], "short") or f"{packet['from']:08x}"
-        )  # Start with origin of response
+            get_name_from_database(packet["to"], "short") or f"{packet['to']:08x}"
+        )  # Start with destination of response
 
-        if lenBack > 0:  # Loop through hops in routeBack and add SNR if available
-            for idx, node_num in enumerate(msg_dict["routeBack"]):
+        lenTowards = 0 if "route" not in msg_dict else len(msg_dict["route"])
+        snrTowardsValid = "snrTowards" in msg_dict and len(msg_dict["snrTowards"]) == lenTowards + 1
+        if lenTowards > 0:
+            for idx, node_num in enumerate(msg_dict["route"]):
                 route_str += (
                     " --> "
                     + (get_name_from_database(node_num, "short") or f"{node_num:08x}")
                     + " ("
-                    + (str(msg_dict["snrBack"][idx] / 4) if msg_dict["snrBack"][idx] != UNK_SNR else "?")
+                    + (
+                        str(msg_dict["snrTowards"][idx] / 4)
+                        if snrTowardsValid and msg_dict["snrTowards"][idx] != UNK_SNR
+                        else "?"
+                    )
                     + "dB)"
                 )
 
-        # End with destination of response (us)
         route_str += (
             " --> "
-            + (get_name_from_database(packet["to"], "short") or f"{packet['to']:08x}")
+            + (get_name_from_database(packet["from"], "short") or f"{packet['from']:08x}")
             + " ("
-            + (str(msg_dict["snrBack"][-1] / 4) if msg_dict["snrBack"][-1] != UNK_SNR else "?")
+            + (str(msg_dict["snrTowards"][-1] / 4) if snrTowardsValid and msg_dict["snrTowards"][-1] != UNK_SNR else "?")
             + "dB)"
         )
 
-        msg_str += route_str + "\n"  # Print the route back to us
+        msg_str += route_str + "\n"
 
-    if packet["from"] not in ui_state.channel_list:
-        ui_state.channel_list.append(packet["from"])
-        refresh_channels = True
+        lenBack = 0 if "routeBack" not in msg_dict else len(msg_dict["routeBack"])
+        backValid = "hopStart" in packet and "snrBack" in msg_dict and len(msg_dict["snrBack"]) == lenBack + 1
+        if backValid:
+            msg_str += "Back:\n"
+            route_str = get_name_from_database(packet["from"], "short") or f"{packet['from']:08x}"
 
-    if is_chat_archived(packet["from"]):
-        update_node_info_in_db(packet["from"], chat_archived=False)
+            if lenBack > 0:
+                for idx, node_num in enumerate(msg_dict["routeBack"]):
+                    route_str += (
+                        " --> "
+                        + (get_name_from_database(node_num, "short") or f"{node_num:08x}")
+                        + " ("
+                        + (str(msg_dict["snrBack"][idx] / 4) if msg_dict["snrBack"][idx] != UNK_SNR else "?")
+                        + "dB)"
+                    )
 
-    channel_number = ui_state.channel_list.index(packet["from"])
-    channel_id = ui_state.channel_list[channel_number]
+            route_str += (
+                " --> "
+                + (get_name_from_database(packet["to"], "short") or f"{packet['to']:08x}")
+                + " ("
+                + (str(msg_dict["snrBack"][-1] / 4) if msg_dict["snrBack"][-1] != UNK_SNR else "?")
+                + "dB)"
+            )
 
-    if channel_id == ui_state.channel_list[ui_state.selected_channel]:
-        refresh_messages = True
-    else:
-        add_notification(channel_number)
-        refresh_channels = True
+            msg_str += route_str + "\n"
 
-    message_from_string = get_name_from_database(packet["from"], type="short") + ":\n"
+        if packet["from"] not in ui_state.channel_list:
+            ui_state.channel_list.append(packet["from"])
+            refresh_channels = True
 
-    add_new_message(channel_id, f"{config.message_prefix} {message_from_string}", msg_str)
+        if is_chat_archived(packet["from"]):
+            update_node_info_in_db(packet["from"], chat_archived=False)
 
-    if refresh_channels:
-        draw_channel_list()
-    if refresh_messages:
-        draw_messages_window(True)
+        channel_number = ui_state.channel_list.index(packet["from"])
+        channel_id = ui_state.channel_list[channel_number]
 
-    save_message_to_db(channel_id, packet["from"], msg_str)
+        if channel_id == ui_state.channel_list[ui_state.selected_channel]:
+            refresh_messages = True
+        else:
+            add_notification(channel_number)
+            refresh_channels = True
+
+        message_from_string = get_name_from_database(packet["from"], type="short") + ":\n"
+
+        add_new_message(channel_id, f"{config.message_prefix} {message_from_string}", msg_str)
+
+        if refresh_channels:
+            request_ui_redraw(channels=True)
+        if refresh_messages:
+            request_ui_redraw(messages=True, scroll_messages_to_bottom=True)
+
+        save_message_to_db(channel_id, packet["from"], msg_str)
 
 def send_message(message: str, destination: int = BROADCAST_NUM, channel: int = 0) -> None:
     """

@@ -331,6 +331,51 @@ def text_width(text: str) -> int:
     return sum(2 if east_asian_width(c) in "FW" else 1 for c in text)
 
 
+def slice_to_width(text: str, max_width: int) -> str:
+    if max_width <= 0:
+        return ""
+
+    width = 0
+    chars = []
+    for char in text:
+        char_width = text_width(char)
+        if width + char_width > max_width:
+            break
+        chars.append(char)
+        width += char_width
+    return "".join(chars)
+
+
+def pad_to_width(text: str, width: int) -> str:
+    clipped = slice_to_width(text, width)
+    return clipped + (" " * max(0, width - text_width(clipped)))
+
+
+def truncate_with_ellipsis(text: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if text_width(text) <= width:
+        return pad_to_width(text, width)
+    if width == 1:
+        return "…"
+    return pad_to_width(slice_to_width(text, width - 1) + "…", width)
+
+
+def split_text_to_width_chunks(text: str, width: int) -> List[str]:
+    if width <= 0:
+        return [""]
+
+    chunks = []
+    remaining = text
+    while remaining:
+        chunk = slice_to_width(remaining, width)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining = remaining[len(chunk) :]
+    return chunks or [""]
+
+
 def wrap_text(text: str, wrap_width: int) -> List[str]:
     """Wraps text while preserving spaces and breaking long words."""
 
@@ -353,8 +398,7 @@ def wrap_text(text: str, wrap_width: int) -> List[str]:
                 wrapped_lines.append(line_buffer.strip())
                 line_buffer = ""
                 line_length = 0
-            for i in range(0, word_length, wrap_width):
-                wrapped_lines.append(word[i : i + wrap_width])
+            wrapped_lines.extend(split_text_to_width_chunks(word, wrap_width))
             continue
 
         if line_length + word_length > wrap_width and word.strip():
@@ -413,8 +457,8 @@ def highlight_line(
         menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 4, color_new)
 
     elif ui_state.current_window == 2:
-        menu_pad.chgat(old_idx, 1, menu_pad.getmaxyx()[1] - 4, get_node_color(old_idx))
-        menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 4, get_node_color(new_idx, reverse=True))
+        menu_pad.chgat(old_idx, 1, menu_pad.getmaxyx()[1] - 2, get_node_color(old_idx))
+        menu_pad.chgat(new_idx, 1, menu_pad.getmaxyx()[1] - 2, get_node_color(new_idx, reverse=True))
 
     menu_win.refresh()
 
