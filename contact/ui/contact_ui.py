@@ -323,7 +323,9 @@ def main_ui(stdscr: curses.window) -> None:
         elif char == chr(4):  # Ctrl + D to delete current channel or node
             handle_ctrl_d()
 
-        elif char == chr(31):  # Ctrl + / to search
+        elif char == chr(31) or (
+            char == "/" and not input_text and ui_state.current_window in (0, 2)
+        ):  # Ctrl + / or / to search in channel/node lists
             handle_ctrl_fslash()
 
         elif char == chr(11):  # Ctrl + K for Help
