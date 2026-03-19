@@ -185,6 +185,43 @@ def get_node_display_name(node_num: int, node: dict) -> str:
     return user.get("longName") or get_name_from_database(node_num, "long")
 
 
+def get_selected_channel_title() -> str:
+    if not ui_state.channel_list:
+        return ""
+
+    channel = ui_state.channel_list[min(ui_state.selected_channel, len(ui_state.channel_list) - 1)]
+    if isinstance(channel, int):
+        return get_name_from_database(channel, "long") or get_name_from_database(channel, "short") or str(channel)
+    return str(channel)
+
+
+def get_window_title(window: int) -> str:
+    if window == 2:
+        return f"Nodes: {len(ui_state.node_list)}"
+    if ui_state.single_pane_mode and window == 1:
+        return get_selected_channel_title()
+    return ""
+
+
+def draw_frame_title(box: curses.window, title: str) -> None:
+    if not title:
+        return
+
+    _, box_w = box.getmaxyx()
+    max_title_width = max(0, box_w - 6)
+    if max_title_width <= 0:
+        return
+
+    clipped_title = truncate_with_ellipsis(title, max_title_width).rstrip()
+    if not clipped_title:
+        return
+
+    try:
+        box.addstr(0, 2, f" {clipped_title} ", curses.A_BOLD)
+    except curses.error:
+        pass
+
+
 def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     """Handle terminal resize events and redraw the UI accordingly."""
     global messages_pad, messages_win, nodes_pad, nodes_win, channel_pad, channel_win, packetlog_win, entry_win
@@ -193,11 +230,19 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     height, width = stdscr.getmaxyx()
 
     if ui_state.single_pane_mode:
-        channel_width, messages_width, nodes_width = compute_widths(width, ui_state.current_window)
+        channel_width = width
+        messages_width = width
+        nodes_width = width
+        channel_x = 0
+        messages_x = 0
+        nodes_x = 0
     else:
         channel_width = int(config.channel_list_16ths) * (width // 16)
         nodes_width = int(config.node_list_16ths) * (width // 16)
         messages_width = width - channel_width - nodes_width
+        channel_x = 0
+        messages_x = channel_width
+        nodes_x = channel_width + messages_width
 
     channel_width = max(MIN_COL, channel_width)
     messages_width = max(MIN_COL, messages_width)
@@ -205,7 +250,7 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
 
     # Ensure the three widths sum exactly to the terminal width by adjusting the focused pane
     total = channel_width + messages_width + nodes_width
-    if total != width:
+    if not ui_state.single_pane_mode and total != width:
         delta = total - width
         if ui_state.current_window == 0:
             channel_width = max(MIN_COL, channel_width - delta)
@@ -222,11 +267,11 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
     if firstrun:
         entry_win = curses.newwin(entry_height, width, height - entry_height, 0)
 
-        channel_win = curses.newwin(content_h, channel_width, 0, 0)
-        messages_win = curses.newwin(content_h, messages_width, 0, channel_width)
-        nodes_win = curses.newwin(content_h, nodes_width, 0, channel_width + messages_width)
+        channel_win = curses.newwin(content_h, channel_width, 0, channel_x)
+        messages_win = curses.newwin(content_h, messages_width, 0, messages_x)
+        nodes_win = curses.newwin(content_h, nodes_width, 0, nodes_x)
 
-        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - entry_height, channel_width)
+        packetlog_win = curses.newwin(pkt_h, messages_width, height - pkt_h - entry_height, messages_x)
 
         # Will be resized to what we need when drawn
         messages_pad = curses.newpad(1, 1)
@@ -253,19 +298,25 @@ def handle_resize(stdscr: curses.window, firstrun: bool) -> None:
         entry_win.mvwin(height - entry_height, 0)
 
         channel_win.resize(content_h, channel_width)
-        channel_win.mvwin(0, 0)
+        channel_win.mvwin(0, channel_x)
 
         messages_win.resize(content_h, messages_width)
-        messages_win.mvwin(0, channel_width)
+        messages_win.mvwin(0, messages_x)
 
         nodes_win.resize(content_h, nodes_width)
-        nodes_win.mvwin(0, channel_width + messages_width)
+        nodes_win.mvwin(0, nodes_x)
 
         packetlog_win.resize(pkt_h, messages_width)
-        packetlog_win.mvwin(height - pkt_h - entry_height, channel_width)
+        packetlog_win.mvwin(height - pkt_h - entry_height, messages_x)
 
     # Draw window borders
-    for win in [channel_win, entry_win, nodes_win, messages_win]:
+    windows_to_draw = [entry_win]
+    if ui_state.single_pane_mode:
+        windows_to_draw.append([channel_win, messages_win, nodes_win][ui_state.current_window])
+    else:
+        windows_to_draw.extend([channel_win, nodes_win, messages_win])
+
+    for win in windows_to_draw:
         win.box()
         win.refresh()
 
@@ -1365,7 +1416,6 @@ def refresh_pad(window: int) -> None:
         pad = nodes_pad
         box = nodes_win
         lines = box.getmaxyx()[0] - 2
-        box.addstr(0, 2, (f"Nodes: {len(ui_state.node_list)}"), curses.A_BOLD)
         selected_item = ui_state.selected_node
         start_index = max(0, selected_item - (win_height - 3))  # Leave room for borders
 
@@ -1401,6 +1451,9 @@ def refresh_pad(window: int) -> None:
 
     if bottom < top or right < left:
         return
+
+    draw_frame_title(box, get_window_title(window))
+    box.refresh()
 
     pad.refresh(
         start_index,

@@ -93,3 +93,68 @@ class ContactUiTests(unittest.TestCase):
         )
         refresh_pad.assert_called_once_with(2)
         draw_window_arrows.assert_called_once_with(2)
+
+    def test_handle_resize_single_pane_keeps_full_width_windows(self) -> None:
+        stdscr = mock.Mock()
+        stdscr.getmaxyx.return_value = (24, 80)
+        ui_state.single_pane_mode = True
+        ui_state.current_window = 1
+
+        contact_ui.entry_win = mock.Mock()
+        contact_ui.channel_win = mock.Mock()
+        contact_ui.messages_win = mock.Mock()
+        contact_ui.nodes_win = mock.Mock()
+        contact_ui.packetlog_win = mock.Mock()
+        contact_ui.messages_pad = mock.Mock()
+        contact_ui.nodes_pad = mock.Mock()
+        contact_ui.channel_pad = mock.Mock()
+
+        with mock.patch.object(contact_ui.curses, "curs_set"):
+            with mock.patch.object(contact_ui, "draw_channel_list") as draw_channel_list:
+                with mock.patch.object(contact_ui, "draw_messages_window") as draw_messages_window:
+                    with mock.patch.object(contact_ui, "draw_node_list") as draw_node_list:
+                        with mock.patch.object(contact_ui, "draw_window_arrows") as draw_window_arrows:
+                            contact_ui.handle_resize(stdscr, False)
+
+        contact_ui.channel_win.resize.assert_called_once_with(21, 80)
+        contact_ui.messages_win.resize.assert_called_once_with(21, 80)
+        contact_ui.nodes_win.resize.assert_called_once_with(21, 80)
+        contact_ui.channel_win.mvwin.assert_called_once_with(0, 0)
+        contact_ui.messages_win.mvwin.assert_called_once_with(0, 0)
+        contact_ui.nodes_win.mvwin.assert_called_once_with(0, 0)
+        contact_ui.channel_win.box.assert_not_called()
+        contact_ui.nodes_win.box.assert_not_called()
+        contact_ui.messages_win.box.assert_called_once_with()
+        draw_channel_list.assert_called_once_with()
+        draw_messages_window.assert_called_once_with(True)
+        draw_node_list.assert_called_once_with()
+        draw_window_arrows.assert_called_once_with(1)
+
+    def test_get_window_title_uses_selected_channel_only_for_messages_in_single_pane_mode(self) -> None:
+        ui_state.single_pane_mode = True
+        ui_state.channel_list = ["Primary"]
+        ui_state.selected_channel = 0
+
+        self.assertEqual(contact_ui.get_window_title(0), "")
+        self.assertEqual(contact_ui.get_window_title(1), "Primary")
+
+    def test_refresh_pad_draws_selected_channel_title_on_message_frame(self) -> None:
+        ui_state.single_pane_mode = True
+        ui_state.current_window = 1
+        ui_state.channel_list = ["Primary"]
+        ui_state.selected_channel = 0
+        ui_state.start_index = [0, 0, 0]
+        ui_state.display_log = False
+
+        contact_ui.channel_win = mock.Mock()
+        contact_ui.channel_win.getmaxyx.return_value = (10, 20)
+        contact_ui.messages_pad = mock.Mock()
+        contact_ui.messages_pad.getmaxyx.return_value = (5, 20)
+        contact_ui.messages_win = mock.Mock()
+        contact_ui.messages_win.getbegyx.return_value = (0, 0)
+        contact_ui.messages_win.getmaxyx.return_value = (10, 20)
+
+        with mock.patch.object(contact_ui, "get_msg_window_lines", return_value=4):
+            contact_ui.refresh_pad(1)
+
+        contact_ui.messages_win.addstr.assert_called_once_with(0, 2, " Primary ", contact_ui.curses.A_BOLD)
