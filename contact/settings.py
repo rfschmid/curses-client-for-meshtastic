@@ -6,19 +6,26 @@ import sys
 import traceback
 
 import contact.ui.default_config as config
-from contact.utilities.input_handlers import get_list_input
-from contact.utilities.i18n import t
-from contact.ui.dialog import dialog
-from contact.utilities.i18n import t
 from contact.ui.colors import setup_colors
-from contact.ui.splash import draw_splash
 from contact.ui.control_ui import set_region, settings_menu
+from contact.ui.dialog import dialog
+from contact.ui.splash import draw_splash
 from contact.utilities.arg_parser import setup_parser
+from contact.utilities.i18n import t
+from contact.utilities.input_handlers import get_list_input
 from contact.utilities.interfaces import initialize_interface, reconnect_interface
+
+
+def close_interface(interface: object) -> None:
+    if interface is None:
+        return
+    with contextlib.suppress(Exception):
+        interface.close()
 
 
 def main(stdscr: curses.window) -> None:
     output_capture = io.StringIO()
+    interface = None
     try:
         with contextlib.redirect_stdout(output_capture), contextlib.redirect_stderr(output_capture):
             setup_colors()
@@ -39,7 +46,7 @@ def main(stdscr: curses.window) -> None:
                 )
                 if confirmation == "Yes":
                     set_region(interface)
-                    interface.close()
+                    close_interface(interface)
                     draw_splash(stdscr)
                     interface = reconnect_interface(args)
             stdscr.clear()
@@ -52,6 +59,8 @@ def main(stdscr: curses.window) -> None:
         logging.error("Traceback: %s", traceback.format_exc())
         logging.error("Console output before crash:\n%s", console_output)
         raise
+    finally:
+        close_interface(interface)
 
 
 def ensure_min_rows(stdscr: curses.window, min_rows: int = 11) -> None:
