@@ -57,6 +57,8 @@ logging.basicConfig(
 
 app_state.lock = threading.Lock()
 
+DEFAULT_CLOSE_TIMEOUT_SECONDS = 5.0
+
 
 # ------------------------------------------------------------------------------
 # Main Program Logic
@@ -72,11 +74,36 @@ def prompt_region_if_unset(args: object, stdscr: Optional[curses.window] = None)
         interface_state.interface = reconnect_interface(args)
 
 
-def close_interface(interface: object) -> None:
+def close_interface(interface: object, timeout_seconds: float = DEFAULT_CLOSE_TIMEOUT_SECONDS) -> bool:
     if interface is None:
-        return
-    with contextlib.suppress(Exception):
-        interface.close()
+        return True
+
+    close_errors = []
+
+    def _close_target() -> None:
+        try:
+            interface.close()
+        except BaseException as error:  # Keep shutdown resilient even for KeyboardInterrupt/SystemExit from libraries.
+            close_errors.append(error)
+
+    close_thread = threading.Thread(target=_close_target, name="meshtastic-interface-close", daemon=True)
+    close_thread.start()
+    close_thread.join(timeout_seconds)
+
+    if close_thread.is_alive():
+        logging.warning("Timed out closing interface after %.1fs; continuing shutdown", timeout_seconds)
+        return False
+
+    if not close_errors:
+        return True
+
+    error = close_errors[0]
+    if isinstance(error, KeyboardInterrupt):
+        logging.info("Interrupted while closing interface; continuing shutdown")
+        return True
+
+    logging.warning("Ignoring error while closing interface: %r", error)
+    return True
 
 
 def interface_is_ready(interface: object) -> bool:
@@ -205,22 +232,31 @@ def start() -> None:
         setup_parser().print_help()
         sys.exit(0)
 
+    interrupted = False
+    fatal_error = None
+
     try:
         curses.wrapper(main)
-        close_interface(interface_state.interface)
     except KeyboardInterrupt:
+        interrupted = True
         logging.info("User exited with Ctrl+C")
-        close_interface(interface_state.interface)
-        sys.exit(0)
     except Exception as e:
+        fatal_error = e
         logging.critical("Fatal error", exc_info=True)
         try:
             curses.endwin()
         except Exception:
             pass
-        print("Fatal error:", e)
+    finally:
+        close_interface(interface_state.interface)
+
+    if fatal_error is not None:
+        print("Fatal error:", fatal_error)
         traceback.print_exc()
         sys.exit(1)
+
+    if interrupted:
+        sys.exit(0)
 
 
 if __name__ == "__main__":
