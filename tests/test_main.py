@@ -186,6 +186,15 @@ class MainRuntimeTests(unittest.TestCase):
         wrapper.assert_called_once_with(entrypoint.main)
         interface.close.assert_called_once_with()
 
+    def test_start_does_not_crash_when_wrapper_returns_without_interface(self) -> None:
+        interface_state.interface = None
+
+        with mock.patch.object(entrypoint.sys, "argv", ["contact"]):
+            with mock.patch.object(entrypoint.curses, "wrapper") as wrapper:
+                entrypoint.start()
+
+        wrapper.assert_called_once_with(entrypoint.main)
+
     def test_main_returns_cleanly_when_user_closes_missing_node_dialog(self) -> None:
         stdscr = mock.Mock()
         args = Namespace(settings=False, demo_screenshot=False)
@@ -213,6 +222,18 @@ class MainRuntimeTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         interface.close.assert_called_once_with()
+        exit_mock.assert_called_once_with(0)
+
+    def test_start_handles_keyboard_interrupt_with_no_interface(self) -> None:
+        interface_state.interface = None
+
+        with mock.patch.object(entrypoint.sys, "argv", ["contact"]):
+            with mock.patch.object(entrypoint.curses, "wrapper", side_effect=KeyboardInterrupt):
+                with mock.patch.object(entrypoint.sys, "exit", side_effect=SystemExit(0)) as exit_mock:
+                    with self.assertRaises(SystemExit) as raised:
+                        entrypoint.start()
+
+        self.assertEqual(raised.exception.code, 0)
         exit_mock.assert_called_once_with(0)
 
     def test_start_handles_fatal_exception_and_exits_one(self) -> None:
