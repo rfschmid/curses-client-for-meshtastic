@@ -133,6 +133,7 @@ def generate_menu_from_protobuf(interface: object) -> Dict[str, Any]:
             "Reset Node DB": None,
             "Shutdown": None,
             "Factory Reset": None,
+            "factory_reset_config": None,
             "Exit": None,
         }
     )

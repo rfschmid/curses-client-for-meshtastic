@@ -1,4 +1,5 @@
 from argparse import Namespace
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -63,3 +64,49 @@ class ControlUiTests(unittest.TestCase):
         get_channels.assert_called_once_with()
         refresh_node_list.assert_called_once_with()
         handle_resize.assert_called_once_with(stdscr, False)
+
+    def test_request_factory_reset_uses_library_helper_when_supported(self) -> None:
+        node = mock.Mock()
+
+        control_ui.request_factory_reset(node)
+
+        node.factoryReset.assert_called_once_with(full=False)
+        node.ensureSessionKey.assert_not_called()
+        node._sendAdmin.assert_not_called()
+
+    def test_request_factory_reset_uses_library_helper_for_full_reset_when_supported(self) -> None:
+        node = mock.Mock()
+
+        control_ui.request_factory_reset(node, full=True)
+
+        node.factoryReset.assert_called_once_with(full=True)
+        node.ensureSessionKey.assert_not_called()
+        node._sendAdmin.assert_not_called()
+
+    def test_request_factory_reset_falls_back_to_int_valued_admin_message(self) -> None:
+        node = mock.Mock()
+        node.factoryReset.side_effect = TypeError(
+            "Field meshtastic.protobuf.AdminMessage.factory_reset_config: Expected an int, got a boolean."
+        )
+        node.iface = SimpleNamespace(localNode=node)
+
+        control_ui.request_factory_reset(node)
+
+        node.ensureSessionKey.assert_called_once_with()
+        sent_message = node._sendAdmin.call_args.args[0]
+        self.assertEqual(sent_message.factory_reset_config, 1)
+        self.assertIsNone(node._sendAdmin.call_args.kwargs["onResponse"])
+
+    def test_request_factory_reset_full_falls_back_to_int_valued_admin_message(self) -> None:
+        node = mock.Mock()
+        node.factoryReset.side_effect = TypeError(
+            "Field meshtastic.protobuf.AdminMessage.factory_reset_device: Expected an int, got a boolean."
+        )
+        node.iface = SimpleNamespace(localNode=node)
+
+        control_ui.request_factory_reset(node, full=True)
+
+        node.ensureSessionKey.assert_called_once_with()
+        sent_message = node._sendAdmin.call_args.args[0]
+        self.assertEqual(sent_message.factory_reset_device, 1)
+        self.assertIsNone(node._sendAdmin.call_args.kwargs["onResponse"])

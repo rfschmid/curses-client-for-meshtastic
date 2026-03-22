@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from typing import List
+from meshtastic.protobuf import admin_pb2
 
 from contact.utilities.save_to_radio import save_changes
 import contact.ui.default_config as config
@@ -34,7 +35,7 @@ MAX_MENU_WIDTH = 80  # desired max; will shrink on small terminals
 save_option = "Save Changes"
 max_help_lines = 0
 help_win = None
-sensitive_settings = ["Reboot", "Reset Node DB", "Shutdown", "Factory Reset"]
+sensitive_settings = ["Reboot", "Reset Node DB", "Shutdown", "Factory Reset", "factory_reset_config"]
 
 
 # Compute the effective menu width for the current terminal
@@ -43,7 +44,7 @@ def get_menu_width() -> int:
     return max(20, min(MAX_MENU_WIDTH, curses.COLS - 2))
 
 
-sensitive_settings = ["Reboot", "Reset Node DB", "Shutdown", "Factory Reset"]
+sensitive_settings = ["Reboot", "Reset Node DB", "Shutdown", "Factory Reset", "factory_reset_config"]
 
 # Get the parent directory of the script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -244,6 +245,26 @@ def reconnect_after_admin_action(stdscr: object, interface: object, action, log_
     action()
     logging.info(log_message)
     return reconnect_interface_with_splash(stdscr, interface)
+
+
+def request_factory_reset(node: object, full: bool = False):
+    try:
+        return node.factoryReset(full=full)
+    except TypeError as ex:
+        field_name = "factory_reset_device" if full else "factory_reset_config"
+        field = admin_pb2.AdminMessage.DESCRIPTOR.fields_by_name[field_name]
+        if field.cpp_type != field.CPPTYPE_INT32:
+            raise
+
+        node.ensureSessionKey()
+        message = admin_pb2.AdminMessage()
+        setattr(message, field_name, 1)
+
+        if node == node.iface.localNode:
+            on_response = None
+        else:
+            on_response = node.onAckNak
+        return node._sendAdmin(message, onResponse=on_response)
 
 
 def redraw_main_ui_after_reconnect(stdscr: object) -> None:
@@ -538,7 +559,27 @@ def settings_menu(stdscr: object, interface: object) -> None:
                 )
                 if confirmation == "Yes":
                     interface = reconnect_after_admin_action(
-                        stdscr, interface, interface.localNode.factoryReset, "Factory Reset Requested by menu"
+                        stdscr,
+                        interface,
+                        lambda: request_factory_reset(interface.localNode, full=True),
+                        "Factory Reset Requested by menu",
+                    )
+                    menu = rebuild_menu_at_current_path(interface, menu_state)
+                menu_state.start_index.pop()
+                continue
+
+            elif selected_option == "factory_reset_config":
+                confirmation = get_list_input(
+                    t("ui.confirm.factory_reset_config", default="Are you sure you want to Factory Reset Config?"),
+                    None,
+                    ["Yes", "No"],
+                )
+                if confirmation == "Yes":
+                    interface = reconnect_after_admin_action(
+                        stdscr,
+                        interface,
+                        lambda: request_factory_reset(interface.localNode, full=False),
+                        "Factory Reset Config Requested by menu",
                     )
                     menu = rebuild_menu_at_current_path(interface, menu_state)
                 menu_state.start_index.pop()
