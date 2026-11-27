@@ -748,3 +748,78 @@ class ContactUiTests(unittest.TestCase):
                                                 contact_ui.handle_f5_key(stdscr)
 
         handle_resize.assert_called_once_with(stdscr, False)
+
+    def test_handle_enter_reconnects_and_preserves_draft_when_disconnected(self) -> None:
+        ui_state.current_window = 1
+        ui_state.channel_list = ["Primary"]
+        ui_state.selected_channel = 0
+        contact_ui.root_win = mock.Mock()
+        contact_ui.interface_state.interface = mock.Mock()
+
+        with ExitStack() as stack:
+            stack.enter_context(mock.patch.object(contact_ui, "interface_is_connected", return_value=False))
+            send_message = stack.enter_context(mock.patch.object(contact_ui, "send_message"))
+            status = stack.enter_context(mock.patch.object(contact_ui, "show_connection_status", return_value=mock.Mock()))
+            dialog = stack.enter_context(mock.patch("contact.ui.dialog.dialog"))
+            reconnect = stack.enter_context(mock.patch("contact.ui.control_ui.reconnect_interface_with_splash"))
+
+            result = contact_ui.handle_enter("hello")
+
+        self.assertEqual(result, "hello")
+        send_message.assert_not_called()
+        status.assert_called_once_with(contact_ui.root_win, "Disconnected", "Trying to reconnect…")
+        reconnect.assert_called_once_with(contact_ui.root_win, contact_ui.interface_state.interface)
+        self.assertFalse(ui_state.reconnect_attempted)
+        dialog.assert_called_once_with(
+            "Reconnected",
+            "Connection restored. Your message was not sent; press Enter to retry.",
+        )
+
+    def test_handle_enter_sets_reconnect_attempted_when_reconnect_fails(self) -> None:
+        ui_state.current_window = 1
+        ui_state.channel_list = ["Primary"]
+        ui_state.selected_channel = 0
+        ui_state.reconnect_attempted = False
+        contact_ui.root_win = mock.Mock()
+        contact_ui.interface_state.interface = mock.Mock()
+
+        with ExitStack() as stack:
+            stack.enter_context(mock.patch.object(contact_ui, "interface_is_connected", return_value=True))
+            stack.enter_context(mock.patch.object(contact_ui, "send_message", side_effect=RuntimeError("ble dead")))
+            stack.enter_context(mock.patch.object(contact_ui, "show_connection_status", return_value=mock.Mock()))
+            stack.enter_context(mock.patch.object(contact_ui, "handle_resize"))
+            dialog = stack.enter_context(mock.patch("contact.ui.dialog.dialog"))
+            stack.enter_context(
+                mock.patch("contact.ui.control_ui.reconnect_interface_with_splash", side_effect=RuntimeError("nope"))
+            )
+
+            result = contact_ui.handle_enter("hello")
+
+        self.assertEqual(result, "hello")
+        self.assertTrue(ui_state.reconnect_attempted)
+        dialog.assert_called_once_with(
+            "Reconnect failed",
+            "Contact could not reconnect after 20 seconds. Check the radio connection and retry your message.",
+        )
+
+    def test_handle_ctrl_t_reconnects_when_disconnected(self) -> None:
+        stdscr = mock.Mock()
+        contact_ui.interface_state.interface = mock.Mock()
+
+        with ExitStack() as stack:
+            stack.enter_context(mock.patch.object(contact_ui, "interface_is_connected", return_value=False))
+            send_traceroute = stack.enter_context(mock.patch.object(contact_ui, "send_traceroute"))
+            stack.enter_context(mock.patch.object(contact_ui, "show_connection_status", return_value=mock.Mock()))
+            stack.enter_context(mock.patch.object(contact_ui.curses, "curs_set"))
+            stack.enter_context(mock.patch.object(contact_ui, "handle_resize"))
+            dialog = stack.enter_context(mock.patch("contact.ui.dialog.dialog"))
+            reconnect = stack.enter_context(mock.patch("contact.ui.control_ui.reconnect_interface_with_splash"))
+
+            contact_ui.handle_ctrl_t(stdscr)
+
+        send_traceroute.assert_not_called()
+        reconnect.assert_called_once_with(stdscr, contact_ui.interface_state.interface)
+        dialog.assert_called_once_with(
+            "Reconnected",
+            "Connection restored. Your traceroute was not sent; please retry.",
+        )

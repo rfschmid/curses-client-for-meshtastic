@@ -35,7 +35,12 @@ from contact.utilities.demo_data import build_demo_interface, configure_demo_dat
 from contact.utilities.input_handlers import get_list_input
 from contact.utilities.i18n import t
 from contact.ui.dialog import dialog
-from contact.utilities.interfaces import initialize_interface, reconnect_interface
+from contact.utilities.interfaces import (
+    DEFAULT_CLOSE_TIMEOUT_SECONDS,
+    close_interface,
+    initialize_interface,
+    reconnect_interface,
+)
 from contact.utilities.logging_utils import configure_logging
 from contact.utilities.utils import get_channels, get_nodeNum, get_node_list
 from contact.utilities.shared_state import ui_state, interface_state, app_state
@@ -54,8 +59,6 @@ configure_logging(logging.INFO)
 
 app_state.lock = threading.Lock()
 
-DEFAULT_CLOSE_TIMEOUT_SECONDS = 5.0
-
 
 # ------------------------------------------------------------------------------
 # Main Program Logic
@@ -69,38 +72,6 @@ def prompt_region_if_unset(args: object, stdscr: Optional[curses.window] = None)
         if stdscr is not None:
             draw_splash(stdscr)
         interface_state.interface = reconnect_interface(args)
-
-
-def close_interface(interface: object, timeout_seconds: float = DEFAULT_CLOSE_TIMEOUT_SECONDS) -> bool:
-    if interface is None:
-        return True
-
-    close_errors = []
-
-    def _close_target() -> None:
-        try:
-            interface.close()
-        except BaseException as error:  # Keep shutdown resilient even for KeyboardInterrupt/SystemExit from libraries.
-            close_errors.append(error)
-
-    close_thread = threading.Thread(target=_close_target, name="meshtastic-interface-close", daemon=True)
-    close_thread.start()
-    close_thread.join(timeout_seconds)
-
-    if close_thread.is_alive():
-        logging.warning("Timed out closing interface after %.1fs; continuing shutdown", timeout_seconds)
-        return False
-
-    if not close_errors:
-        return True
-
-    error = close_errors[0]
-    if isinstance(error, KeyboardInterrupt):
-        logging.info("Interrupted while closing interface; continuing shutdown")
-        return True
-
-    logging.warning("Ignoring error while closing interface: %r", error)
-    return True
 
 
 def interface_is_ready(interface: object) -> bool:

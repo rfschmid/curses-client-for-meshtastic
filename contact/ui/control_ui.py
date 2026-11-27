@@ -11,7 +11,7 @@ from meshtastic.protobuf import admin_pb2
 from contact.utilities.save_to_radio import save_changes
 import contact.ui.default_config as config
 from contact.utilities.config_io import config_export, config_import
-from contact.utilities.interfaces import reconnect_interface
+from contact.utilities.interfaces import close_interface, reconnect_interface
 from contact.utilities.control_utils import transform_menu_path
 from contact.utilities.i18n import t
 from contact.utilities.ini_utils import parse_ini_file
@@ -239,10 +239,7 @@ def get_input_type_for_field(field) -> type:
 
 
 def reconnect_interface_with_splash(stdscr: object, interface: object) -> object:
-    try:
-        interface.close()
-    except Exception:
-        pass
+    close_interface(interface)
 
     new_interface = reconnect_interface(app_state.connection_args)
     interface_state.interface = new_interface

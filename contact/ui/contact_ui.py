@@ -910,6 +910,8 @@ def handle_enter(input_text: str) -> str:
             return input_text
         # Enter key pressed, send user input as message
         try:
+            if not interface_is_connected(interface_state.interface):
+                raise ConnectionError("Meshtastic interface is disconnected")
             send_message(
                 input_text,
                 channel=ui_state.selected_channel,
@@ -918,17 +920,11 @@ def handle_enter(input_text: str) -> str:
             )
         except Exception as exc:
             logging.warning("Message send failed; reconnecting interface: %s", exc)
-            try:
-                from contact.ui.control_ui import reconnect_interface_with_splash
-
-                reconnect_interface_with_splash(root_win, interface_state.interface)
-                contact.ui.dialog.dialog("Reconnected", "Connection restored. Your message was not sent; press Enter to retry.")
-            except Exception as reconnect_exc:
-                logging.exception("Automatic reconnect failed")
-                contact.ui.dialog.dialog(
-                    "Reconnect failed",
-                    "Contact could not reconnect after 20 seconds. Check the radio connection and retry your message.",
-                )
+            _reconnect_after_send_failure(
+                root_win,
+                "Connection restored. Your message was not sent; press Enter to retry.",
+                "Contact could not reconnect after 20 seconds. Check the radio connection and retry your message.",
+            )
             return input_text
         ui_state.reply_id = None
         ui_state.reply_context = ""
@@ -1191,6 +1187,35 @@ def handle_f5_key(stdscr: curses.window) -> None:
         handle_resize(stdscr, False)
 
 
+def _reconnect_after_send_failure(
+    stdscr: Optional[curses.window],
+    success_message: str,
+    failure_message: str,
+) -> bool:
+    """Reconnect after a send failure while keeping UI status and retry state consistent."""
+    status_win = show_connection_status(stdscr, "Disconnected", "Trying to reconnect…")
+    try:
+        from contact.ui.control_ui import reconnect_interface_with_splash
+
+        reconnect_interface_with_splash(stdscr, interface_state.interface)
+        if status_win is not None:
+            status_win.erase()
+            status_win.refresh()
+        ui_state.reconnect_attempted = False
+        contact.ui.dialog.dialog("Reconnected", success_message)
+        return True
+    except Exception:
+        if status_win is not None:
+            status_win.erase()
+            status_win.refresh()
+        if stdscr is not None:
+            handle_resize(stdscr, False)
+        ui_state.reconnect_attempted = True
+        logging.exception("Automatic reconnect failed")
+        contact.ui.dialog.dialog("Reconnect failed", failure_message)
+        return False
+
+
 def handle_ctrl_t(stdscr: curses.window) -> None:
     """Handle Ctrl + T key events to send a traceroute."""
     now = time.monotonic()
@@ -1211,7 +1236,20 @@ def handle_ctrl_t(stdscr: curses.window) -> None:
         handle_resize(stdscr, False)
         return
 
-    send_traceroute()
+    try:
+        if not interface_is_connected(interface_state.interface):
+            raise ConnectionError("Meshtastic interface is disconnected")
+        send_traceroute()
+    except Exception as exc:
+        logging.warning("Traceroute send failed; reconnecting interface: %s", exc)
+        _reconnect_after_send_failure(
+            stdscr,
+            "Connection restored. Your traceroute was not sent; please retry.",
+            "Contact could not reconnect after 20 seconds. Check the radio connection and retry.",
+        )
+        curses.curs_set(1)
+        handle_resize(stdscr, False)
+        return
     ui_state.last_traceroute_time = now
     curses.curs_set(0)  # Hide cursor
     contact.ui.dialog.dialog(
@@ -1356,8 +1394,10 @@ def show_remote_admin_wait(stdscr: curses.window, node_name: str) -> Optional[cu
         return None
 
 
-def show_connection_status(stdscr: curses.window, title: str, message: str) -> Optional[curses.window]:
+def show_connection_status(stdscr: Optional[curses.window], title: str, message: str) -> Optional[curses.window]:
     """Display a non-blocking connection-status dialog over the current UI."""
+    if stdscr is None:
+        return None
     try:
         height, width = stdscr.getmaxyx()
         box_width = min(width - 4, max(len(message) + 4, len(title) + 6, 32))
